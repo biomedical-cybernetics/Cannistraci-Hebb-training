@@ -6,10 +6,10 @@
 
 Yingtao Zhang<sup>1,2,3</sup>, Jialin Zhao<sup>1,2,3</sup>, Wenjing Wu<sup>1,2,3</sup>, Alessandro Muscoloni<sup>1,2,4</sup>  
 & Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>  
-<sup>1,2,3</sup> Center for Complex Network Intelligence (CCNI)  
-<sup>1,2,3</sup> Tsinghua Laboratory of Brain and Intelligence (THBI)  
-<sup>1,2,3</sup> Department of Computer Science  
-<sup>1,2,4</sup> Department of Biomedical Engineering  
+<sup>1</sup> Center for Complex Network Intelligence (CCNI)  
+<sup>2</sup> Tsinghua Laboratory of Brain and Intelligence (THBI)  
+<sup>3</sup> Department of Computer Science  
+<sup>4</sup> Department of Biomedical Engineering  
 Tsinghua University, Beijing, China  
 
 
