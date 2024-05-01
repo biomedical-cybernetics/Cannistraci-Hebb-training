@@ -96,7 +96,6 @@ def args():
     parser.add_argument("--print_network", action="store_true", help="save the adjacency matrix of each sandwich layer after each evolutionary epoch")
     parser.add_argument("--self_correlated_sparse", action="store_true")
     parser.add_argument("--calib_samples", type=int, default=256)
-    parser.add_argument("--noparallel", action="store_true")
     parser.add_argument("--dim", type=int, default=1)
     parser.add_argument("--dimension", type=int, default=0)
     parser.add_argument("--early_stop_threshold", type=float, default="0.9")

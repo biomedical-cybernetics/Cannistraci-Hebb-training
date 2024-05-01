@@ -90,7 +90,7 @@ class sparse_layer(nn.Module):
         self.early_stop_signal = False
         
         
-    @torch.no_grad
+    @torch.no_grad()
     def remove_connections(self):
         """
             Remove links
@@ -127,7 +127,7 @@ class sparse_layer(nn.Module):
         self.mask_after_removal = rewiredWeights
         print("Number of removal weights: ", int(torch.sum(self.weight_mask).item() - torch.sum(self.mask_after_removal).item()))
         
-    @torch.no_grad
+    @torch.no_grad()
     def regrow_connections(self):
         """
             Regrow new links
@@ -196,7 +196,7 @@ class sparse_layer(nn.Module):
                 print("The evolution of topology has stopped!")
                 self.early_stop_signal = True
 
-    @torch.no_grad
+    @torch.no_grad()
     def clear_buffers(self):
         """
         Resets buffers from memory according to passed indices.
