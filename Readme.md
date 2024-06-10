@@ -114,10 +114,13 @@ python run.py \
 If you use our code, please consider to cite:
 
 ```
-@inproceedings{zhangepitopological,
-  title={Epitopological learning and Cannistraci-Hebb network shape intelligence brain-inspired theory for ultra-sparse advantage in deep learning},
-  author={Zhang, Yingtao and Zhao, Jialin and Wenjing, Wu and Muscoloni, Alessandro and Cannistraci, Carlo Vittorio},
-  booktitle={The Twelfth International Conference on Learning Representations}
+@inproceedings{
+zhang2024epitopological,
+title={Epitopological learning and Cannistraci-Hebb network shape intelligence brain-inspired theory for ultra-sparse advantage in deep learning},
+author={Yingtao Zhang and Jialin Zhao and Wenjing Wu and Alessandro Muscoloni and Carlo Vittorio Cannistraci},
+booktitle={The Twelfth International Conference on Learning Representations},
+year={2024},
+url={https://openreview.net/forum?id=iayEcORsGd}
 }
 ```
 
