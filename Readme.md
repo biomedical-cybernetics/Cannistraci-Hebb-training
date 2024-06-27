@@ -19,11 +19,11 @@ Tsinghua University, Beijing, China
 Yingtao Zhang<sup>1,2,4</sup>, Jialin Zhao<sup>1,2,4</sup>, Ziheng Liao<sup>1,2,4</sup>, Wenjing Wu<sup>1,2,4</sup>  
 Umberto Michieli<sup>5</sup> & Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>
 
-<sup>1</sup> Center for Complex Network Intelligence (CCNI), Tsinghua Laboratory of Brain and Intelligence (THBI)
-<sup>2</sup> Department of Computer Science
-<sup>3</sup> Department of Biomedical Engineering
-<sup>4</sup> Tsinghua University, Beijing, China
-<sup>5</sup> University of Padova, Italy
+<sup>1</sup> Center for Complex Network Intelligence (CCNI), Tsinghua Laboratory of Brain and Intelligence (THBI)  
+<sup>2</sup> Department of Computer Science  
+<sup>3</sup> Department of Biomedical Engineering  
+<sup>4</sup> Tsinghua University, Beijing, China  
+<sup>5</sup> University of Padova, Italy  
 
 
 #### Setup
