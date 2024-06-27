@@ -1,4 +1,4 @@
-## Cannistraci-Hebb Training (CHT)
+## Cannistraci-Hebb Training (CHT) and Cannistraci-Hebb Training soft rule (CHTs)
 
 --------
 
@@ -12,6 +12,18 @@ Yingtao Zhang<sup>1,2,3</sup>, Jialin Zhao<sup>1,2,3</sup>, Wenjing Wu<sup>1,2,3
 <sup>4</sup> Department of Biomedical Engineering  
 Tsinghua University, Beijing, China  
 
+
+#### Brain-inspired Sparse Training in MLP and Transformers with Network Science Modeling via Cannistraci-Hebb Soft Rule
+
+
+Yingtao Zhang<sup>1,2,4</sup>, Jialin Zhao<sup>1,2,4</sup>, Ziheng Liao<sup>1,2,4</sup>, Wenjing Wu<sup>1,2,4</sup>  
+Umberto Michieli<sup>5</sup> & Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>
+
+<sup>1</sup> Center for Complex Network Intelligence (CCNI), Tsinghua Laboratory of Brain and Intelligence (THBI)
+<sup>2</sup> Department of Computer Science
+<sup>3</sup> Department of Biomedical Engineering
+<sup>4</sup> Tsinghua University, Beijing, China
+<sup>5</sup> University of Padova, Italy
 
 
 #### Setup
@@ -33,29 +45,14 @@ Step 2: Install relevant packages
 pip3 install torch=1.31.1+cu117
 pip install transformers=4.36.2 sentencepiece=0.1.99 datasets=2.16.1 bitsandbytes=0.42.0
 pip install accelerate=0.26.1
+pip install pybind11
 ```
 
-
-
-Step 3: Install the Matlab dependency
-
-Reference: https://www.freesion.com/article/42501015647/
-
-
-
-Step 4: Build the MEX function compiler
+Step 3: Compile the python-c code
 
 ```
- * Compile in Windows:
- * Go to MATLAB "Add-Ons" and install "MATLAB Support for MinGW-w64 C/C++ Compiler"
- * Build the MEX function using the following MATLAB command (change the MinGW path if needed):
- * mex C:\ProgramData\MATLAB\SupportPackages\R2020b\3P.instrset\mingw_w64.instrset\lib\gcc\x86_64-w64-mingw32\6.3.0\libgomp.a CH_scores_mex.c CFLAGS='$CFLAGS -fopenmp' LDFLAGS='$LDFLAGS -fopenmp'
- * Compile in Linux:
- * Build the MEX functions using the following MATLAB commands:
- * mex CH_scores_mex.c CFLAGS='$CFLAGS -fopenmp' LDFLAGS='$LDFLAGS -fopenmp'
+python setup.py build_ext --inplace
 ```
-
-
 
 #### Usage
 
