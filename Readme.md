@@ -1,114 +1,158 @@
-## Cannistraci-Hebb Training (CHT) and Cannistraci-Hebb Training soft rule (CHTs)
+# Cannistraci-Hebb Training (CHT) and Cannistraci-Hebb Training soft rule (CHTs)
 
---------
+## Epitopological Learning and Cannistraci-Hebb Network Shape Intelligence Brain-Inspired Theory for Ultra-Sparse Advantage in Deep Learning
 
-#### Epitopological Learning and Cannistraci-Hebb Network Shape Intelligence Brain-Inspired Theory for Ultra-Sparse Advantage in Deep Learning
+Yingtao Zhang<sup>1,2,3</sup>, Jialin Zhao<sup>1,2,3</sup>, Wenjing Wu<sup>1,2,3</sup>, Alessandro Muscoloni<sup>1,2,4</sup> & Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>
 
-Yingtao Zhang<sup>1,2,3</sup>, Jialin Zhao<sup>1,2,3</sup>, Wenjing Wu<sup>1,2,3</sup>, Alessandro Muscoloni<sup>1,2,4</sup>  
-& Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>  
 <sup>1</sup> Center for Complex Network Intelligence (CCNI)  
 <sup>2</sup> Tsinghua Laboratory of Brain and Intelligence (THBI)  
 <sup>3</sup> Department of Computer Science  
 <sup>4</sup> Department of Biomedical Engineering  
-Tsinghua University, Beijing, China  
+Tsinghua University, Beijing, China
 
+## Brain-inspired Sparse Training in MLP and Transformers with Network Science Modeling via Cannistraci-Hebb Soft Rule
 
-#### Brain-inspired Sparse Training in MLP and Transformers with Network Science Modeling via Cannistraci-Hebb Soft Rule
-
-
-Yingtao Zhang<sup>1,2,4</sup>, Jialin Zhao<sup>1,2,4</sup>, Ziheng Liao<sup>1,2,4</sup>, Wenjing Wu<sup>1,2,4</sup>  
-Umberto Michieli<sup>5</sup> & Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>
+Yingtao Zhang<sup>1,2,4</sup>, Jialin Zhao<sup>1,2,4</sup>, Ziheng Liao<sup>1,2,4</sup>, Wenjing Wu<sup>1,2,4</sup>, Umberto Michieli<sup>5</sup> & Carlo Vittorio Cannistraci<sup>1,2,3,4</sup>
 
 <sup>1</sup> Center for Complex Network Intelligence (CCNI), Tsinghua Laboratory of Brain and Intelligence (THBI)  
 <sup>2</sup> Department of Computer Science  
 <sup>3</sup> Department of Biomedical Engineering  
 <sup>4</sup> Tsinghua University, Beijing, China  
-<sup>5</sup> University of Padova, Italy  
+<sup>5</sup> University of Padova, Italy
 
+## Setup
 
-#### Setup
+1. Create a new conda environment:
 
-------
-
-Step 1: Create a new conda environment:
-
-```
-conda create -n cht python=3.10
-conda activate cht
+```markdown
+conda create -n chts python=3.10
+conda activate chts
 ```
 
+2. Install relevant packages:
 
-
-Step 2: Install relevant packages
-
-```
+```bash
 pip3 install torch=1.31.1+cu117
 pip install transformers=4.36.2 sentencepiece=0.1.99 datasets=2.16.1 bitsandbytes=0.42.0
 pip install accelerate=0.26.1
 pip install pybind11
 ```
 
-Step 3: Compile the python-c code
+3. Compile the python-c code:
 
-```
+```bash
 python setup.py build_ext --inplace
 ```
 
-#### Usage
+## Usage
 
-----
+### MLP
 
-CHT on MNIST-MLP task
+Navigate to the MLP directory:
 
-```
-python run.py \
-	--learning_rate 0.01 --epochs 100 \
-	--regrow_method CH3_L3 --init_mode swi --chain_removal --self_correlated_sparse \
-	--dim 2 --bias --linearlr --early_stop --update_interval 3 --dataset MNIST \
+```bash
+cd mlp_and_cnn
 ```
 
+#### CHT on MNIST-MLP task
 
-
-SET on MNIST-MLP task
-
-```
-python run.py \
-	--learning_rate 0.01 --epochs 100 \
-	--regrow_method random --init_mode kaiming \
-	--dim 2 --bias --linearlr --update_interval 3 --dataset MNIST \
+```bash
+python run.py --batch_size 32 --dataset MNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3 --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude --seed 0 --sparsity 0.99 --early_stop
 ```
 
--------
+#### CHTs on MNIST-MLP task
 
-CHT on ResNet152-CIFAR100 task
-
-```
-python run.py \
-	--dataset CIFAR100 --network_structure resnet152 \
-	--learning_rate 0.1 --epochs 200 \
-	--regrow_method CH3_L3 --init_mode swi \
-	--dim 2 --bias --linearlr --end_factor 0.001 --early_stop --update_interval 1 \
+```bash
+python run.py --batch_size 32 --dataset MNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3_soft --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude_soft --seed 0 --sparsity 0.99
 ```
 
+Note:
 
+- `--remove_method` can be chosen from weight_magnitude, weight_magnitude_soft, ri, ri_soft 
+- `--self_correlated_sparse` means using Correlated Sparse Topological initialization
+- For Bipartite Small World (BSW) model, activate `--WS --beta $YOUR_BETA_VALUE`
+- For Bipartite Scale-Free (BSF) model, activate `--BA`
 
-SET on ResNet152-CIFAR100 task
+#### SET on MNIST-MLP task
 
+```bash
+python run.py --batch_size 32 --dataset MNIST --network_structure mlp --weight_decay 5e-04 --regrow_method random --init_mode kaiming --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --no_log --zeta 0.3 --remove_method weight_magnitude --seed 0 --sparsity 0.99
 ```
-python run.py \
-	--dataset CIFAR100 --network_structure resnet152 \
-	--learning_rate 0.1 --epochs 200 \
-	--regrow_method random --init_mode kaiming \
-	--dim 2 --bias --linearlr --end_factor 0.001 --update_interval 1 \
+
+### Transformer
+
+Navigate to the Transformer directory:
+
+```bash
+cd Transformer
 ```
 
+#### IWSLT 2014
 
+1. Download and tokenize the dataset:
 
-#### Citation
+```bash
+cd data/iwslt14/
+bash prepare-iwslt14.sh
+```
 
-----
+2. Preprocess the dataset:
 
-If you use our code, please consider to cite:
+```bash
+cd ../../
+bash preprocess.iwslt14.sh
+```
+
+3. Train the model:
+
+- Fully connected network:
+
+```bash
+bash iwslt_FC.sh
+```
+
+- CHTs:
+
+```bash
+bash iwslt_CHTs.sh
+```
+
+- SET:
+
+```bash
+bash iwslt_SET.sh
+```
+
+4. Evaluate the model:
+
+```bash
+bash eval_iwslt.sh ${beam_size} ${model_path}
+```
+
+#### Multi-30k
+
+Download and preprocess Multi-30k:
+
+```bash
+python preprocess.py -train_src data/Multi30k/train.en -train_tgt data/Multi30k/train.de -valid_src data/Multi30k/val.en -valid_tgt data/Multi30k/val.de -save_data data/Multi30k/processed.noshare -src_seq_length 256 -tgt_seq_length 256 -src_vocab_size 40000 -tgt_vocab_size 40000
+```
+
+#### WMT17
+
+Download and preprocess WMT17:
+
+```bash
+cd data/wmt17/
+bash prepare-wmt14.sh
+cd ../../
+bash preprocess.wmt17.sh
+```
+
+## Citation
+
+If you use our code, please consider citing:
+
+### CHT
 
 ```
 @inproceedings{
@@ -118,6 +162,21 @@ author={Yingtao Zhang and Jialin Zhao and Wenjing Wu and Alessandro Muscoloni an
 booktitle={The Twelfth International Conference on Learning Representations},
 year={2024},
 url={https://openreview.net/forum?id=iayEcORsGd}
+}
+```
+
+### CHTs
+
+```
+@article{202406.1136,
+	doi = {10.20944/preprints202406.1136.v1},
+	url = {https://doi.org/10.20944/preprints202406.1136.v1},
+	year = 2024,
+	month = {June},
+	publisher = {Preprints},
+	author = {Yingtao Zhang and Jialin Zhao and Ziheng Liao and Wenjing Wu and Umberto Michieli and Carlo Vittorio Cannistraci},
+	title = {Brain-Inspired Sparse Training in MLP and Transformers with Network Science Modeling via Cannistraci-Hebb Soft Rule},
+	journal = {Preprints}
 }
 ```
 

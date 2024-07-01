@@ -10,10 +10,10 @@ using namespace std;
 namespace py = pybind11;
 using namespace std::chrono; // Use the std::chrono namespace
 
-void find_paths_rec(const vector<int>& ir, const vector<int>& jc,
-                    int L, int length_max, const vector<int>& length_to_idx, int length,
-                    vector<vector<int>>& paths_cell, vector<int>& P_MAX, vector<int>& P, vector<int>& path, vector<bool>& in_path,
-                    int ns, int nv, const vector<double>& deg) {
+void find_paths_rec(const int* ir, const int* jc,
+                    int L, int length_max, const int* length_to_idx, int length,
+                    int** paths_cell, int* P_MAX, int* P, int* path, bool* in_path,
+                    int ns, int nv, const double* deg) {
     path[length] = nv;
     in_path[nv] = true;
     length += 1;
@@ -22,7 +22,7 @@ void find_paths_rec(const vector<int>& ir, const vector<int>& jc,
         int paths_idx = nv * L + length_to_idx[length - 2];
         if (P[paths_idx] + 1 > P_MAX[paths_idx]) {
             P_MAX[paths_idx] *= 2;
-            paths_cell[paths_idx].resize((length - 1) * P_MAX[paths_idx]);
+            paths_cell[paths_idx] = (int*) realloc(paths_cell[paths_idx], (length - 1) * P_MAX[paths_idx] * sizeof(int));
         }
 
         for (int i = 0; i < length - 1; i++) {
@@ -42,16 +42,14 @@ void find_paths_rec(const vector<int>& ir, const vector<int>& jc,
     in_path[nv] = false;
 }
 
-void compute_scores_from_source_node(const vector<int>& ir, const vector<int>& jc, int N,
-                                     const vector<double>& lengths, int L, int length_max, const vector<int>& length_to_idx,
-                                     vector<vector<int>>& paths_cell, vector<int>& P_MAX, vector<int>& P, vector<int>& path, vector<bool>& in_path,
-                                     int ns, const vector<double>& deg, vector<int>& nodes_lc, vector<double>& deg_i_v1, vector<double>& deg_i_v2, vector<double>& deg_i_v3,
-                                     vector<double>& deg_e_v1, vector<double>& deg_e_v2, vector<double>& deg_e_v3, const vector<double>& models, int M, py::array_t<double> scores_cell) {
+void compute_scores_from_source_node(const int* ir, const int* jc, int N,
+                                     const double* lengths, int L, int length_max, const int* length_to_idx,
+                                     int** paths_cell, int* P_MAX, int* P, int* path, bool* in_path,
+                                     int ns, const double* deg, int* nodes_lc, double* deg_i_v1, double* deg_i_v2, double* deg_i_v3,
+                                     double* deg_e_v1, double* deg_e_v2, double* deg_e_v3, const double* models, int M, double* scores) {
     int i, j, l, m, nd, n, p, paths_idx, nodes_lc_size, length;
     double deg_e1_gmean, deg_e2_gmean, deg_e3_gmean, pow_exp;
     bool a_found, b_found, c_found, d_found;
-
-    auto scores = scores_cell.mutable_unchecked<2>();
 
     in_path[ns] = true;
     for (i = jc[ns]; i < jc[ns + 1]; i++) {
@@ -63,6 +61,16 @@ void compute_scores_from_source_node(const vector<int>& ir, const vector<int>& j
         length = (int)lengths[l];
         pow_exp = (double)1 / (length - 1);
         for (nd = 0; nd < N; nd++) {
+            // flag = false;
+            // for (i = jc[nd]; i < jc[nd + 1]; i++) {
+            //     if (ir[i] == ns) {
+            //         flag = true;
+            //         break;
+            //     }
+            // }
+            // if (flag==true){
+            //     continue;
+            // }
             paths_idx = 0;
             if ((deg[ns] < deg[nd]) || ((deg[ns] == deg[nd]) && (ns < nd))) {
                 paths_idx = nd * L + l;
@@ -102,7 +110,6 @@ void compute_scores_from_source_node(const vector<int>& ir, const vector<int>& j
                             if (((!a_found && !b_found) || (!c_found && !d_found)) && length > 2) {
                                 count += 1;
                             } else {
-                                /* Version 1 & 3 */
                                 deg_i_v1[n] += 1;
                                 deg_i_v3[n] += 1;
                             }
@@ -134,16 +141,16 @@ void compute_scores_from_source_node(const vector<int>& ir, const vector<int>& j
                     deg_e3_gmean = pow(deg_e3_gmean, pow_exp);
                     for (m = 0; m < M; m++) {
                         if (models[m] == 0) {
-                            scores(m * L + l, ns * N + nd) += 1 / deg_e1_gmean;
+                            scores[(m * L + l) * (N * N) + (ns * N + nd)] += 1 / deg_e1_gmean;
                         } else if (models[m] == 1) {
-                            scores(m * L + l, ns * N + nd) += 1 / deg_e2_gmean;
+                            scores[(m * L + l) * (N * N) + (ns * N + nd)] += 1 / deg_e2_gmean;
                         } else if (models[m] == 2) {
-                            scores(m * L + l, ns * N + nd) += 1 / deg_e3_gmean;
+                            scores[(m * L + l) * (N * N) + (ns * N + nd)] += 1 / deg_e3_gmean;
                         }
                     }
                 }
                 for (m = 0; m < M; m++) {
-                    scores(m * L + l, nd * N + ns) = scores(m * L + l, ns * N + nd);
+                    scores[(m * L + l) * (N * N) + (nd * N + ns)] = scores[(m * L + l) * (N * N) + (ns * N + nd)];
                 }
             }
             P[paths_idx] = 0;
@@ -151,7 +158,8 @@ void compute_scores_from_source_node(const vector<int>& ir, const vector<int>& j
     }
 }
 
-py::array_t<double> compute_scores(const vector<int>& ir, const vector<int>& jc, int N, const vector<double>& lengths, int L, int length_max, const vector<double>& models, int M) {
+py::array_t<double> compute_scores(const vector<int>& ir, const vector<int>& jc, int N,
+                                   const vector<double>& lengths, int L, int length_max, const vector<double>& models, int M) {
     auto start = high_resolution_clock::now();
     vector<double> deg(N, 0);
     for (int n = 0; n < N; n++) {
@@ -163,44 +171,67 @@ py::array_t<double> compute_scores(const vector<int>& ir, const vector<int>& jc,
         length_to_idx[lengths[l] - 2] = l;
     }
 
-//    std::vector<std::vector<double>> scores_cell(L * M, std::vector<double>(N * N, 0.0));
     py::array_t<double> scores_cell({L * M, N * N});
+    auto scores = scores_cell.mutable_unchecked<2>();
+    std::fill(scores.mutable_data(0, 0), scores.mutable_data(0, 0) + scores.size(), 0.0);
 
     int num_threads = omp_get_max_threads();
 
-    // Timing parallel section start
     auto parallel_start = high_resolution_clock::now();
 
-    #pragma omp parallel if(num_threads > 1) num_threads(num_threads) shared(ir, jc, N, lengths, L, length_max, length_to_idx, deg, models, M, scores_cell)
+    #pragma omp parallel if(num_threads > 1) num_threads(num_threads) shared(ir, jc, N, lengths, L, length_max, length_to_idx, deg, models, M, scores)
     {
-        vector<vector<int>> paths_cell(L * N);
-        vector<int> P_MAX(L * N, P_MAX_START);
-        vector<int> P(L * N, 0);
-        vector<int> path(length_max, 0);
-        vector<bool> in_path(N, false);
-        vector<int> nodes_lc(N, 0);
-        vector<double> deg_i_v1(N, 0), deg_i_v2(N, 0), deg_i_v3(N, 0);
-        vector<double> deg_e_v1(N, 0), deg_e_v2(N, 0), deg_e_v3(N, 0);
+        int** paths_cell = (int**) calloc(L * N, sizeof(int*));
+        int* P_MAX = (int*) calloc(L * N, sizeof(int));
+        int* P = (int*) calloc(L * N, sizeof(int));
+        int* path = (int*) calloc(length_max, sizeof(int));
+        bool* in_path = (bool*) calloc(N, sizeof(bool));
+        int* nodes_lc = (int*) calloc(N, sizeof(int));
+        double* deg_i_v1 = (double*) calloc(N, sizeof(double));
+        double* deg_i_v2 = (double*) calloc(N, sizeof(double));
+        double* deg_i_v3 = (double*) calloc(N, sizeof(double));
+        double* deg_e_v1 = (double*) calloc(N, sizeof(double));
+        double* deg_e_v2 = (double*) calloc(N, sizeof(double));
+        double* deg_e_v3 = (double*) calloc(N, sizeof(double));
+
         for (int l = 0; l < L; l++) {
             for (int n = 0; n < N; n++) {
                 int paths_idx = n * L + l;
                 P_MAX[paths_idx] = P_MAX_START;
                 P[paths_idx] = 0;
-                paths_cell[paths_idx].resize((lengths[l] - 1) * P_MAX[paths_idx]);
+                paths_cell[paths_idx] = (int*) calloc((lengths[l] - 1) * P_MAX[paths_idx], sizeof(int));
             }
         }
+
         #pragma omp for schedule(dynamic)
         for (int n = 0; n < N; n++) {
-            compute_scores_from_source_node(ir, jc, N, lengths, L, length_max, length_to_idx, paths_cell, P_MAX, P, path, in_path, n, deg, nodes_lc, deg_i_v1, deg_i_v2, deg_i_v3, deg_e_v1, deg_e_v2, deg_e_v3, models, M, scores_cell);
+            compute_scores_from_source_node(ir.data(), jc.data(), N, lengths.data(), L, length_max, length_to_idx.data(), paths_cell, P_MAX, P, path, in_path, n, deg.data(), nodes_lc, deg_i_v1, deg_i_v2, deg_i_v3, deg_e_v1, deg_e_v2, deg_e_v3, models.data(), M, scores.mutable_data(0, 0));
         }
+
+        for (int l = 0; l < L; l++) {
+            for (int n = 0; n < N; n++) {
+                int paths_idx = n * L + l;
+                free(paths_cell[paths_idx]);
+            }
+        }
+        free(paths_cell);
+        free(P_MAX);
+        free(P);
+        free(path);
+        free(in_path);
+        free(nodes_lc);
+        free(deg_i_v1);
+        free(deg_i_v2);
+        free(deg_i_v3);
+        free(deg_e_v1);
+        free(deg_e_v2);
+        free(deg_e_v3);
     }
 
-    // End timing parallel section
     auto parallel_end = high_resolution_clock::now();
     auto parallel_duration = duration_cast<milliseconds>(parallel_end - parallel_start);
     std::cout << "Parallel section took: " << parallel_duration.count() << " milliseconds" << std::endl;
 
-    // End timing
     auto end = high_resolution_clock::now();
     auto total_duration = duration_cast<milliseconds>(end - start);
     std::cout << "Total function took: " << total_duration.count() << " milliseconds" << std::endl;
