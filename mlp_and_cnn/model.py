@@ -24,11 +24,11 @@ def remove_unactive_links_forward(current_adj, before_adj):
     return current_adj
 
 class sparse_mlp(nn.Module):
-    def __init__(self, indim, hiddim, outdim, save_path, Tend, eng, device, args) -> None:
+    def __init__(self, indim, hiddim, outdim, save_path, Tend, device, args) -> None:
         super(sparse_mlp, self).__init__()
-        self.sparse_layer1 = sparse_layer(indim, hiddim[0], save_path, Tend, 1, eng, device, args)
-        self.sparse_layer2 = sparse_layer(hiddim[0], hiddim[1], save_path, Tend, 2, eng, device, args)
-        self.sparse_layer3 = sparse_layer(hiddim[1], hiddim[2], save_path, Tend, 3, eng, device, args)
+        self.sparse_layer1 = sparse_layer(indim, hiddim[0], save_path, Tend, 1, device, args)
+        self.sparse_layer2 = sparse_layer(hiddim[0], hiddim[1], save_path, Tend, 2, device, args)
+        self.sparse_layer3 = sparse_layer(hiddim[1], hiddim[2], save_path, Tend, 3, device, args)
         self.sparse_layers = [self.sparse_layer1, self.sparse_layer2, self.sparse_layer3]
         
         self.last_layer  = nn.Linear(hiddim[2], outdim)
@@ -187,7 +187,7 @@ class Dense_GoogleNet(nn.Module):
     
 class Sparse_GoogleNet(nn.Module):
 
-    def __init__(self, indim, hiddim, outdim, save_path, Tend, eng, device, args):
+    def __init__(self, indim, hiddim, outdim, save_path, Tend, device, args):
         super(Sparse_GoogleNet, self).__init__()
         self.prelayer = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1, bias=False),
@@ -230,9 +230,9 @@ class Sparse_GoogleNet(nn.Module):
                                         self.maxpool, self.a5, self.b5, self.avgpool)
         
         self.relu = nn.ReLU(inplace=True)
-        self.sl1 = sparse_layer(indim, hiddim, save_path, Tend, 1, eng, device, args)
-        self.sl2 = sparse_layer(hiddim, hiddim, save_path, Tend, 2, eng, device, args)
-        self.sl3 = sparse_layer(hiddim, hiddim, save_path, Tend, 3, eng, device, args)
+        self.sl1 = sparse_layer(indim, hiddim, save_path, Tend, 1, device, args)
+        self.sl2 = sparse_layer(hiddim, hiddim, save_path, Tend, 2, device, args)
+        self.sl3 = sparse_layer(hiddim, hiddim, save_path, Tend, 3, device, args)
         self.sparse_layers = [self.sl1, self.sl2, self.sl3]
 
         self.update_mode = args.update_mode
@@ -461,14 +461,14 @@ class Dense_ResNet152(nn.Module):
   
 class Sparse_ResNet152(nn.Module):
 
-    def __init__(self, outdim, save_path, Tend, eng, device, args):
+    def __init__(self, outdim, save_path, Tend, device, args):
         super().__init__()
         self.block = BottleNeck
         self.num_block = [3, 8, 36, 3]
         self.in_channels = 64
         self.cnn_layers = self.make_layers()
         
-        self.sl1 = sparse_layer(512 * self.block.expansion, args.dim * 512 * self.block.expansion, save_path, Tend, 1, eng, device, args)
+        self.sl1 = sparse_layer(512 * self.block.expansion, args.dim * 512 * self.block.expansion, save_path, Tend, 1, device, args)
         self.sparse_layers = [self.sl1]
         self.update_mode = args.update_mode
         self.fc = nn.Linear(args.dim * 512 * self.block.expansion, outdim)

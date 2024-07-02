@@ -185,7 +185,7 @@ def train_model(seed, device, args):
         if args.regrow_method == "fc":
             model = dense_mlp(indim, hiddim, outdim, args).to(device)
         else:
-            model = sparse_mlp(indim, hiddim, outdim, save_path, Tend, eng, device, args).to(device)
+            model = sparse_mlp(indim, hiddim, outdim, save_path, Tend, device, args).to(device)
             filename = "self-correlated_sparse/{0}".format(args.dataset)
         
             create_sparse_topological_initialization(args, model, filename=filename)
@@ -201,7 +201,7 @@ def train_model(seed, device, args):
         if args.regrow_method == "fc":
             model = Dense_GoogleNet(indim, hiddim, outdim).to(device)
         else:
-            model = Sparse_GoogleNet(indim, hiddim, outdim, save_path, Tend, eng, device, args).to(device)
+            model = Sparse_GoogleNet(indim, hiddim, outdim, save_path, Tend, device, args).to(device)
             create_sparse_topological_initialization(args, model)
             
     elif args.network_structure == "resnet152":
@@ -210,7 +210,7 @@ def train_model(seed, device, args):
         if args.regrow_method == "fc":
             model = Dense_ResNet152(args, outdim).to(device)
         else:
-            model = Sparse_ResNet152(outdim, save_path, Tend, eng, device, args).to(device)
+            model = Sparse_ResNet152(outdim, save_path, Tend, device, args).to(device)
             create_sparse_topological_initialization(args, model)
     
     if args.reset_parameters:

@@ -91,7 +91,7 @@ def find_last_pos(array, value):
 
 
 class sparse_layer(nn.Module):
-    def __init__(self, indim, outdim, save_path, Tend, layer, eng, device, args):
+    def __init__(self, indim, outdim, save_path, Tend, layer, device, args):
         super(sparse_layer, self).__init__()
         self.indim = indim
         self.outdim = outdim
@@ -104,7 +104,6 @@ class sparse_layer(nn.Module):
         self.adaptive_zeta = args.adaptive_zeta
         self.Tend = Tend
         self.device = device
-        self.eng = eng
         self.layer = layer
         self.early_stop = args.early_stop
         self.stop_signal = False
