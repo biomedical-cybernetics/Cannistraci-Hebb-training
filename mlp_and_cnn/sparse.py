@@ -4,7 +4,6 @@ import math
 import numpy as np
 from scipy.io import savemat
 import os
-import matlab
 import sys
 sys.path.append("../")
 import compute_scores
