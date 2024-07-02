@@ -32,9 +32,9 @@ conda activate chts
 2. Install relevant packages:
 
 ```bash
-pip3 install torch=1.31.1+cu117
-pip install transformers=4.36.2 sentencepiece=0.1.99 datasets=2.16.1 bitsandbytes=0.42.0
-pip install accelerate=0.26.1
+pip3 install torch --index-url https://download.pytorch.org/whl/cu118
+pip install transformers==4.36.2 sentencepiece==0.1.99 datasets==2.16.1 bitsandbytes==0.42.0
+pip install accelerate==0.26.1
 pip install pybind11
 ```
 

@@ -2,8 +2,6 @@ import argparse
 import torch
 import numpy as np
 import random
-import matlab
-import matlab.engine
 from model import sparse_mlp, dense_mlp, Sparse_GoogleNet, Dense_GoogleNet, Dense_ResNet152, Sparse_ResNet152
 import os 
 from load_data import load_data_mlp, load_data_cnn
@@ -11,7 +9,6 @@ import torch.optim as optim
 from scipy.io import loadmat, savemat
 import time
 from Train_and_Test import Train, Test
-import multiprocessing as mp
 import random
 import wandb
 from sparse_topology_initialization import create_sparse_topological_initialization
