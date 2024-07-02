@@ -118,12 +118,6 @@ def args():
 
 def train_model(seed, device, args):
     setup_seed(seed)
-    
-    # start matlab engine since CH3_L3_path_nosubrank is written in MATLAB
-    if "CH3_L3" in args.regrow_method:
-        eng = matlab.engine.start_matlab()
-    else:
-        eng = None
 
     
     print(args)
