@@ -36,6 +36,11 @@ pip3 install torch --index-url https://download.pytorch.org/whl/cu118
 pip install transformers==4.36.2 sentencepiece==0.1.99 datasets==2.16.1 bitsandbytes==0.42.0
 pip install accelerate==0.26.1
 pip install pybind11
+pip install wandb
+pip install torchtext==0.4.0
+pip install scipy==1.10.1
+pip install matplotlib
+pip install configargparse
 ```
 
 3. Compile the python-c code:

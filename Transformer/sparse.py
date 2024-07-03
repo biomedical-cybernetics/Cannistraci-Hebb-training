@@ -2,13 +2,11 @@ import torch
 import torch.nn as nn
 import math
 import numpy as np
-from scipy.io import savemat
-import os
-import matlab
 import sys
 sys.path.append("../")
 import compute_scores
 from scipy.sparse import csr_matrix
+from scip.sparse.csgraph import shortest_path
 
 def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples):
 
@@ -292,6 +290,44 @@ class sparse_layer(nn.Module):
                 print("Regrowing threshold is 0!!!")
 
             new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires)
+
+        elif self.regrow_method == "CH4_L3_soft":
+            xb = np.array(self.mask_after_removal.cpu())
+
+            x = self.transform_bi_to_mo(xb)
+            A = csr_matrix(x)
+            ir = A.indices
+            jc = A.indptr
+            scores_cell = np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))
+            scores = scores_cell.reshape(self.N, self.N)
+            # reverse from similarity to distance: f(x) = |x - xmin - xmax|
+            distance = x * np.abs(scores - np.min(scores[scores>0])-np.max(scores))
+            distance = csr_matrix(distance)
+            dist_matrix = shortest_path(distance, method='D', directed=False)
+
+            spcorr, _ = spearmanr(dist_matrix)
+
+            scores[scores==0] = (spcorr[scores==0] + 1)/2 * np.min(scores[scores>0]) 
+
+
+            scores = torch.tensor(scores[:self.indim, self.indim:]).to(self.device)
+            scores = scores * (self.mask_after_removal == 0)
+            thre = torch.sort(scores.ravel())[0][-self.noRewires]
+            if thre == 0:
+                print("Regrowing threshold is 0!!!")
+
+            new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires)
+            
+
+        elif self.regrow_method == "random":
+            # Randomly regrow new links
+            score = torch.rand(self.mask_after_removal.shape[0], self.mask_after_removal.shape[1])
+            score[self.mask_after_removal==1]=0
+            thre = torch.sort(score.ravel())[0][-self.noRewires-1]
+
+            new_links_mask[score >= thre] = 1
+            new_links_mask[score< thre] = 0
+
 
         elif self.regrow_method == "random":
             # Randomly regrow new links
