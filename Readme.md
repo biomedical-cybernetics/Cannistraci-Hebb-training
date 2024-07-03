@@ -41,6 +41,9 @@ pip install torchtext==0.4.0
 pip install scipy==1.10.1
 pip install matplotlib
 pip install configargparse
+pip install pynvml
+pip install netifaces
+pip install prl
 ```
 
 3. Compile the python-c code:
@@ -62,13 +65,13 @@ cd mlp_and_cnn
 #### CHT on MNIST-MLP task
 
 ```bash
-python run.py --batch_size 32 --dataset MNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3 --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude --seed 0 --sparsity 0.99 --early_stop
+python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3 --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude --seed 0 --sparsity 0.99 --early_stop
 ```
 
 #### CHTs on MNIST-MLP task
 
 ```bash
-python run.py --batch_size 32 --dataset MNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3_soft --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude_soft --seed 0 --sparsity 0.99
+python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3_soft --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude_soft --seed 0 --sparsity 0.99
 ```
 
 Note:
@@ -81,7 +84,7 @@ Note:
 #### SET on MNIST-MLP task
 
 ```bash
-python run.py --batch_size 32 --dataset MNIST --network_structure mlp --weight_decay 5e-04 --regrow_method random --init_mode kaiming --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --no_log --zeta 0.3 --remove_method weight_magnitude --seed 0 --sparsity 0.99
+python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method random --init_mode kaiming --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --no_log --zeta 0.3 --remove_method weight_magnitude --seed 0 --sparsity 0.99
 ```
 
 ### Transformer

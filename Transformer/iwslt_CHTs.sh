@@ -6,7 +6,7 @@ gn=0
 ws=6000
 lr=2
 
-CUDA_VISIBLE_DEVICES=8 python train.py \
+CUDA_VISIBLE_DEVICES=0 python train.py \
 		-world_size 1 \
 		-gpu_ranks 0 \
 	-rnn_size 512 \

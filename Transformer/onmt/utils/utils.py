@@ -2,10 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from peft.utils.other import transpose
 import random
 import numpy as np
-from peft import PeftModel
 import torch
 import pynvml
 import os

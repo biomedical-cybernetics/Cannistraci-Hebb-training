@@ -6,7 +6,8 @@ import sys
 sys.path.append("../")
 import compute_scores
 from scipy.sparse import csr_matrix
-from scip.sparse.csgraph import shortest_path
+from scipy.sparse.csgraph import shortest_path
+from scipy.stats import spearmanr
 
 def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples):
 
