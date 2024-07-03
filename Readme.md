@@ -60,7 +60,7 @@ python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_
 #### CHTs on MNIST-MLP task
 
 ```bash
-python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3_soft --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude_soft --seed 0 --sparsity 0.99
+python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH3_L3_soft --init_mode swi --update_mode zero --bias --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 3 --dim 2 --update_interval 1 --reset_parameters --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method weight_magnitude_soft --seed 0 --sparsity 0.99 --T_decay linear
 ```
 
 Note:
