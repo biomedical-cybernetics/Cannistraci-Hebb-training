@@ -11,6 +11,16 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
 from scipy.stats import spearmanr
 
+
+def find_first_pos(array, value):
+    idx = (np.abs(array - value)).argmin()
+    return idx
+
+
+def find_last_pos(array, value):
+    idx = (np.abs(array - value))[::-1].argmin()
+    return array.shape[0] - idx
+
 def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples):
 
     if not isinstance(matrix, torch.Tensor):
@@ -79,12 +89,12 @@ def weighted_sampling_2d_torch(matrix, sampled_matrix, n_samples, T):
     
     return sampled_matrix
 
-def find_first_pos(array, value):
+def find_first_pos_torch(array, value):
     idx = (torch.abs(array - value)).argmin()
     return idx
 
 
-def find_last_pos(array, value):
+def find_last_pos_torch(array, value):
     idx = (torch.abs(array - value))
     idx = torch.flip(idx, dims=[0]).argmin()
     return array.shape[0] - idx
@@ -229,11 +239,10 @@ class sparse_layer(nn.Module):
             # remove with weight magnitude
             values = torch.sort((self.weight.data * self.weight_mask).ravel())[0]
             # remove connections
-            firstZeroPos = find_first_pos(values, 0)  # Find the first_zero's index
-            lastZeroPos = find_last_pos(values, 0)  # Find the last_zero's index
+            firstZeroPos = find_first_pos_torch(values, 0)  # Find the first_zero's index
+            lastZeroPos = find_last_pos_torch(values, 0)  # Find the last_zero's index
             self.largestNegative = values[int((1 - zeta) * firstZeroPos)]
-            self.smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + zeta * (values.shape[0] - lastZeroPos)))]
-
+            self.smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + zeta * (values.shape[0] - lastZeroPos)))]      
             print("smallest positive threshold: ", self.smallestPositive.item())
             print("largest negative threshold: ", self.largestNegative.item())
 
@@ -241,6 +250,27 @@ class sparse_layer(nn.Module):
             rewiredWeights[rewiredWeights > self.smallestPositive] = 1
             rewiredWeights[rewiredWeights < self.largestNegative] = 1
             rewiredWeights[rewiredWeights != 1] = 0
+        
+        elif self.remove_method == "weight_magnitude_old":
+            # remove with weight magnitude
+            weights = (self.weight.data * self.weight_mask).cpu().numpy()
+            values = np.sort(weights.ravel())
+            # remove connections
+            firstZeroPos = find_first_pos(values, 0)  # Find the first_zero's index
+            lastZeroPos = find_last_pos(values, 0)  # Find the last_zero's index
+            self.largestNegative = values[int((1 - zeta) * firstZeroPos)]
+            print(zeta)
+            self.smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + zeta * (values.shape[0] - lastZeroPos)))]
+
+            print("smallest positive threshold: ", self.smallestPositive)
+            print("largest negative threshold: ", self.largestNegative)
+
+            rewiredWeights = weights.copy()
+            rewiredWeights[rewiredWeights > self.smallestPositive] = 1
+            rewiredWeights[rewiredWeights < self.largestNegative] = 1
+            rewiredWeights[rewiredWeights != 1] = 0
+
+            rewiredWeights = torch.Tensor(rewiredWeights).to(self.device)
         
         self.mask_after_removal = rewiredWeights
         print("Number of removal weights: ", int(torch.sum(self.weight_mask).item() - torch.sum(self.mask_after_removal).item()))
@@ -259,7 +289,7 @@ class sparse_layer(nn.Module):
         if self.regrow_method == "CH3_L3":
             
             # bipartite adjacency matrix
-            xb = self.mask_after_removal.cpu().numpy()
+            xb = np.array(self.mask_after_removal.cpu())
 
             x = self.transform_bi_to_mo(xb)
             A = csr_matrix(x)
@@ -270,7 +300,6 @@ class sparse_layer(nn.Module):
             scores = scores[:self.indim, self.indim:]
             
             scores = scores * (self.mask_after_removal == 0)
-            
             thre = torch.sort(scores.ravel())[0][-self.noRewires]
             
             if thre == 0:
@@ -359,8 +388,12 @@ class sparse_layer(nn.Module):
         
         
         # update weights
-        self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
-        self.weight.data += (new_links_weight * (self.weight_mask == 0))
+        if self.args.old_version:
+            self.weight.data *= self.mask_after_removal
+            self.weight.data += new_links_weight
+        else:
+            self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
+            self.weight.data += (new_links_weight * (self.weight_mask == 0))
 
         removed_links_mask = self.weight_mask - self.mask_after_removal
         # update mask    

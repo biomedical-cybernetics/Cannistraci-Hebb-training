@@ -111,6 +111,7 @@ def args():
     parser.add_argument("--T_decay", type=str, default="no_decay", choices=["no_decay", "linear"])
     parser.add_argument("--decay_factor", type=float, default=0.9)
     parser.add_argument("--clear_buffer", action="store_true")
+    parser.add_argument("--old_version", action="store_true", help="use the old version of the sparse model")
 
     
     return parser.parse_args()
@@ -133,6 +134,9 @@ def train_model(seed, device, args):
     ]
     
     # Adding conditional parts
+    if args.old_version:
+        save_path_parts.append("old_")
+
     if args.self_correlated_sparse:
         save_path_parts.append("scs_")
 
