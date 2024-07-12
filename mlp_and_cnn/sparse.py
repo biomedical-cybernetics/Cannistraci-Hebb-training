@@ -253,24 +253,13 @@ class sparse_layer(nn.Module):
         
         elif self.remove_method == "weight_magnitude_old":
             # remove with weight magnitude
-            weights = (self.weight.data * self.weight_mask).cpu().numpy()
-            values = np.sort(weights.ravel())
-            # remove connections
-            firstZeroPos = find_first_pos(values, 0)  # Find the first_zero's index
-            lastZeroPos = find_last_pos(values, 0)  # Find the last_zero's index
-            self.largestNegative = values[int((1 - zeta) * firstZeroPos)]
-            print(zeta)
-            self.smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + zeta * (values.shape[0] - lastZeroPos)))]
+            thre=torch.sort(torch.abs(self.weight.data * self.weight_mask).ravel())[0][-int(self.n_params * (1-zeta))]
 
-            print("smallest positive threshold: ", self.smallestPositive)
-            print("largest negative threshold: ", self.largestNegative)
-
-            rewiredWeights = weights.copy()
-            rewiredWeights[rewiredWeights > self.smallestPositive] = 1
-            rewiredWeights[rewiredWeights < self.largestNegative] = 1
-            rewiredWeights[rewiredWeights != 1] = 0
-
-            rewiredWeights = torch.Tensor(rewiredWeights).to(self.device)
+            #remove connections
+            rewiredWeights = torch.abs(self.weight.data * self.weight_mask)
+            rewiredWeights[rewiredWeights >= thre] = 1
+            rewiredWeights[rewiredWeights < thre] = 0
+            
         
         self.mask_after_removal = rewiredWeights
         print("Number of removal weights: ", int(torch.sum(self.weight_mask).item() - torch.sum(self.mask_after_removal).item()))
