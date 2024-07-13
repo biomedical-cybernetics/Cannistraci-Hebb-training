@@ -329,15 +329,34 @@ class sparse_layer(nn.Module):
             new_links_mask[score >= thre] = 1
             new_links_mask[score< thre] = 0
 
+        elif self.regrow_method == "CH3_L3_soft_adaptive":
+            
+            xb = np.array(self.mask_after_removal.cpu())
 
-        elif self.regrow_method == "random":
-            # Randomly regrow new links
-            score = torch.rand(self.mask_after_removal.shape[0], self.mask_after_removal.shape[1])
-            score[self.mask_after_removal==1]=0
-            thre = torch.sort(score.ravel())[0][-self.noRewires-1]
+            x = self.transform_bi_to_mo(xb)
+            A = csr_matrix(x)
+            ir = A.indices
+            jc = A.indptr
+            scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
+            scores = scores_cell.reshape(self.N, self.N)
+            
+            min_value = find_min_excluding_zero(scores)
+            scores += min_value
+            scores[self.mask_after_removal==1] = 0
+            self.T = self.args.powerlaw_thre/self.gamma
+            new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires, self.T_decay, self.T)
 
-            new_links_mask[score >= thre] = 1
-            new_links_mask[score< thre] = 0
+
+            x_mono = transform_bi_to_mono(self.mask_after_removal)
+            degree = np.array(torch.sum(x_mono, dim=0))
+            import powerlaw 
+
+            fit = powerlaw.Fit(degree)
+            self.gamma = fit.power_law.alpha
+            
+            print(f"Current powerlaw gamma is: {self.gamma}, T: {self.T}, min_value of CH3_L3: {min_value}")
+        else:
+            assert False, "Regrowth method not implemented"
 
                 
         
