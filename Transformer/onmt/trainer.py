@@ -262,7 +262,7 @@ class Trainer(object):
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
-        optimizer_state_list = ["step", "exp_avg", "exp_avg_sq"]
+        optimizer_state_list = ["exp_avg", "exp_avg_sq"]
         min_acc = 0
         for i, (batches, normalization) in enumerate(
                 self._accum_batches(train_iter)):
@@ -359,6 +359,13 @@ class Trainer(object):
                         if isinstance(m, sparse_layer):
                             m.regrow_connections()
                             m.epoch += 1
+                    
+                    if self.opt.clear_buffer:
+                        # clear the nonexisting links' buffer
+                        for _, m in self.model.named_modules():
+                            if isinstance(m, sparse_layer):
+                                for state in optimizer_state_list:
+                                    self.optim._optimizer.state[m.weight][state] *= m.weight_mask
 
 
 

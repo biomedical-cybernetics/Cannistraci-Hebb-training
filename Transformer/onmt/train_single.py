@@ -51,6 +51,12 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     if opt.WS:
         opt.save_model += f"_WS_{opt.ws_beta}"
+        if opt.clear_buffer:
+        opt.save_model += f"_cb"
+
+    if opt.adaptive_zeta:
+        opt.save_model += f"_az"
+        
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
         logger.info('Loading checkpoint from %s' % opt.train_from)
