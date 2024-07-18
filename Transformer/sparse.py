@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import math
 import numpy as np
+from scipy.io import savemat
+import os
 import sys
 sys.path.append("../")
 import compute_scores
@@ -10,7 +12,17 @@ from scipy.sparse.csgraph import shortest_path
 from scipy.stats import spearmanr
 import powerlaw
 
-def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples, T=1):
+
+def find_first_pos(array, value):
+    idx = (np.abs(array - value)).argmin()
+    return idx
+
+
+def find_last_pos(array, value):
+    idx = (np.abs(array - value))[::-1].argmin()
+    return array.shape[0] - idx
+
+def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples):
 
     if not isinstance(matrix, torch.Tensor):
         matrix = torch.tensor(matrix)
@@ -18,7 +30,6 @@ def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples, T=1):
     flat_matrix = matrix.flatten()
     flat_matrix = torch.where(torch.isnan(flat_matrix), torch.zeros_like(flat_matrix), flat_matrix)
     # print(torch.max(flat_matrix))
-    flat_matrix = flat_matrix ** T
     probabilities = flat_matrix / flat_matrix.sum()
     sampled_flat_indices = torch.multinomial(probabilities, n_samples, replacement=False)
     
@@ -74,18 +85,18 @@ def weighted_sampling_2d_torch(matrix, sampled_matrix, n_samples, T):
     
     flat_matrix = matrix.flatten()
     probabilities = softmax_with_temperature(flat_matrix, T)
-
+    
     sampled_flat_indices = torch.multinomial(probabilities, n_samples, replacement=False)
     sampled_matrix.view(-1)[sampled_flat_indices] = 1
     
     return sampled_matrix
 
-def find_first_pos(array, value):
+def find_first_pos_torch(array, value):
     idx = (torch.abs(array - value)).argmin()
     return idx
 
 
-def find_last_pos(array, value):
+def find_last_pos_torch(array, value):
     idx = (torch.abs(array - value))
     idx = torch.flip(idx, dims=[0]).argmin()
     return array.shape[0] - idx
@@ -93,7 +104,7 @@ def find_last_pos(array, value):
 
 
 class sparse_layer(nn.Module):
-    def __init__(self, indim, outdim, save_path, layer, device, args):
+    def __init__(self, indim, outdim, save_path, Tend, layer, device, args):
         super(sparse_layer, self).__init__()
         self.indim = indim
         self.outdim = outdim
@@ -103,18 +114,20 @@ class sparse_layer(nn.Module):
         self.zeta = args.zeta
         self.regrow_method = args.regrow_method
         self.save_path = save_path
-        self.layer = layer
-        self.T_decay = args.T_decay
+        self.adaptive_zeta = args.adaptive_zeta
+        self.Tend = Tend
         self.device = device
-        self.gamma = 30
-
-        self.Tend = args.train_steps // args.update_interval
-        self.mask = torch.rand(self.indim, self.outdim).to(self.device)
-        self.mask[self.mask < self.sparsity] = 0
-        self.mask[self.mask != 0] = 1
-        self.register_buffer('weight_mask', self.mask)
-        self.n_params = len(self.weight_mask.nonzero())
+        self.layer = layer
+        self.early_stop = args.early_stop
+        self.stop_signal = False
+        self.early_stop_threshold = args.early_stop_threshold
         self.T = 1
+        self.T_decay = args.T_decay
+        
+        self.weight_mask = torch.rand(self.indim, self.outdim).to(self.device)
+        self.weight_mask[self.weight_mask < self.sparsity] = 0
+        self.weight_mask[self.weight_mask != 0] = 1
+        self.n_params = len(self.weight_mask.nonzero())
         print('numbers of weights ', self.n_params)
         self.args = args
         self.selected_model = []
@@ -151,6 +164,7 @@ class sparse_layer(nn.Module):
         
         if args.bias:
             self.bias = nn.Parameter(torch.Tensor(self.outdim))
+            self.bias.data = torch.zeros(self.outdim)
         else:
             self.register_parameter('bias', None)
 
@@ -161,6 +175,13 @@ class sparse_layer(nn.Module):
         self.optimizer = None
         self.epoch = 0
 
+        self.print_network = args.print_network
+        if self.print_network:
+            self.adjacency_save_path = self.save_path + "adj_" + str(self.layer) + "/"
+            if not os.path.exists(self.adjacency_save_path):
+                os.mkdir(self.adjacency_save_path)
+            savemat(self.adjacency_save_path + str(self.epoch) + '.mat',
+                    {"adjacency_matrix": self.weight_mask.cpu().numpy()})
         self.weight.data *= self.weight_mask
 
         self.overlap_rate = 0
@@ -175,10 +196,8 @@ class sparse_layer(nn.Module):
         print('Number of weights before removal: ', torch.sum(self.weight_mask).item())
         
         self.mask_after_removal = torch.zeros_like(self.weight_mask)
-        
-
-        # if using adaptive zeta
-        if self.args.adaptive_zeta:
+        # if using adaptive zeta as RigL
+        if self.adaptive_zeta:
             zeta = (float(self.zeta / 2) * (1 + math.cos(self.epoch * math.pi / self.Tend)))
             print("zeta: " + str(zeta))
         else:
@@ -186,7 +205,7 @@ class sparse_layer(nn.Module):
         
         
         if self.remove_method == "weight_magnitude_soft":
-            # Sampling removal
+            # remove with weight magnitude soft sampling
             weight = torch.abs(self.weight.data * self.weight_mask)
             rewiredWeights = torch.zeros_like(weight).to(self.device)
             if self.T_decay == "linear":
@@ -198,6 +217,7 @@ class sparse_layer(nn.Module):
 
             
         elif self.remove_method == "ri":
+            # remove with relative importance
             weight = torch.abs(self.weight.data * self.weight_mask)
             weight = weight/(torch.sum(weight, dim=0)) + weight/(torch.sum(weight, dim=1)).reshape(-1, 1)
             
@@ -206,12 +226,7 @@ class sparse_layer(nn.Module):
             rewiredWeights = self.weight.data * self.weight_mask
             rewiredWeights[weight < thresh] = 0
             rewiredWeights[weight >= thresh] = 1
-
-        elif self.remove_method == "random":
-            score = torch.ones_like(self.mask_after_removal) * self.weight_mask
-            rewiredWeights = torch.zeros((self.indim, self.outdim)).to(self.device)
-            rewiredWeights = remove_scores_sampling_2d_torch(score, rewiredWeights, int(self.n_params * (1-zeta)), self.T_decay, self.T)
-        
+            
         elif self.remove_method == "ri_soft":
             # remove with relative importance soft sampling
             weight = torch.abs(self.weight.data * self.weight_mask)
@@ -226,11 +241,10 @@ class sparse_layer(nn.Module):
             # remove with weight magnitude
             values = torch.sort((self.weight.data * self.weight_mask).ravel())[0]
             # remove connections
-            firstZeroPos = find_first_pos(values, 0)  # Find the first_zero's index
-            lastZeroPos = find_last_pos(values, 0)  # Find the last_zero's index
+            firstZeroPos = find_first_pos_torch(values, 0)  # Find the first_zero's index
+            lastZeroPos = find_last_pos_torch(values, 0)  # Find the last_zero's index
             self.largestNegative = values[int((1 - zeta) * firstZeroPos)]
-            self.smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + zeta * (values.shape[0] - lastZeroPos)))]
-
+            self.smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + zeta * (values.shape[0] - lastZeroPos)))]      
             print("smallest positive threshold: ", self.smallestPositive.item())
             print("largest negative threshold: ", self.largestNegative.item())
 
@@ -238,6 +252,16 @@ class sparse_layer(nn.Module):
             rewiredWeights[rewiredWeights > self.smallestPositive] = 1
             rewiredWeights[rewiredWeights < self.largestNegative] = 1
             rewiredWeights[rewiredWeights != 1] = 0
+        
+        elif self.remove_method == "weight_magnitude_old":
+            # remove with weight magnitude
+            thre=torch.sort(torch.abs(self.weight.data * self.weight_mask).ravel())[0][-int(self.n_params * (1-zeta))]
+
+            #remove connections
+            rewiredWeights = torch.abs(self.weight.data * self.weight_mask)
+            rewiredWeights[rewiredWeights >= thre] = 1
+            rewiredWeights[rewiredWeights < thre] = 0
+            
         
         self.mask_after_removal = rewiredWeights
         print("Number of removal weights: ", int(torch.sum(self.weight_mask).item() - torch.sum(self.mask_after_removal).item()))
@@ -266,8 +290,10 @@ class sparse_layer(nn.Module):
             scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
             scores = scores_cell.reshape(self.N, self.N)
             scores = scores[:self.indim, self.indim:]
+            
             scores = scores * (self.mask_after_removal == 0)
             thre = torch.sort(scores.ravel())[0][-self.noRewires]
+            
             if thre == 0:
                 print("Regrowing threshold is 0!!!")
                 thre = 0.00001
@@ -289,14 +315,18 @@ class sparse_layer(nn.Module):
             scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
             scores = scores_cell.reshape(self.N, self.N)
             scores = scores[:self.indim, self.indim:]
+            
             scores = scores * (self.mask_after_removal == 0)
+
             thre = torch.sort(scores.ravel())[0][-self.noRewires]
             if thre == 0:
                 print("Regrowing threshold is 0!!!")
+                scores = (scores + 0.00001)*(self.mask_after_removal==0)
 
             new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires)
-
+        
         elif self.regrow_method == "CH4_L3_soft":
+            # bipartite adjacency matrix
             xb = np.array(self.mask_after_removal.cpu())
 
             x = self.transform_bi_to_mo(xb)
@@ -322,48 +352,20 @@ class sparse_layer(nn.Module):
                 print("Regrowing threshold is 0!!!")
 
             new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires)
-            
+        elif self.regrow_method == "gradient":
+        
+            grad = torch.abs(self.core_grad)
+            grad[self.weight_mask==1]=0
+            thre = torch.sort(grad.ravel())[0][-self.noRewires-1]
+
+            new_links_mask[grad >= thre] = 1
+            new_links_mask[grad< thre] = 0
 
         elif self.regrow_method == "random":
             # Randomly regrow new links
             score = torch.rand(self.mask_after_removal.shape[0], self.mask_after_removal.shape[1])
             score[self.mask_after_removal==1]=0
             thre = torch.sort(score.ravel())[0][-self.noRewires-1]
-
-            new_links_mask[score >= thre] = 1
-            new_links_mask[score< thre] = 0
-
-        elif self.regrow_method == "CH3_L3_soft_adaptive":
-            
-            xb = np.array(self.mask_after_removal.cpu())
-
-            x = self.transform_bi_to_mo(xb)
-            A = csr_matrix(x)
-            ir = A.indices
-            jc = A.indptr
-            scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
-            scores = scores_cell.reshape(self.N, self.N)
-            scores = scores[:self.indim, self.indim:]
-
-            scores[self.mask_after_removal==1] = 0
-            
-
-
-            x_mono = self.transform_bi_to_mo(self.mask_after_removal.cpu().numpy())
-            degree = np.sum(x_mono, axis=0)
-            fit = powerlaw.Fit(degree)
-            self.gamma = fit.power_law.alpha
-
-            self.T = self.args.powerlaw_thre/self.gamma
-            new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires, self.T)
-            
-            print(f"Current powerlaw gamma is: {self.gamma}, T: {self.T}")
-
-        elif self.regrow_method == "gradient":
-        
-            grad = torch.abs(self.core_grad)
-            grad[self.weight_mask==1]=0
-            thre = torch.sort(grad.ravel())[0][-self.noRewires-1]
 
             new_links_mask[grad >= thre] = 1
             new_links_mask[grad< thre] = 0
@@ -387,16 +389,20 @@ class sparse_layer(nn.Module):
         
         
         # update weights
-        self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
-        self.weight.data += (new_links_weight * (self.weight_mask == 0))
+        if self.args.old_version:
+            self.weight.data *= self.mask_after_removal
+            self.weight.data += new_links_weight
+        else:
+            self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
+            self.weight.data += (new_links_weight * (self.weight_mask == 0))
+
         removed_links_mask = self.weight_mask - self.mask_after_removal
         # update mask    
         self.weight_mask = self.mask_after_removal + new_links_mask
         self.new_links_mask = new_links_mask
         print('Number of weights after evolution: ', torch.sum(self.weight_mask).item())
-            
         # Using early stop or not
-        if self.args.early_stop:
+        if self.early_stop:
             self.overlap_rate = torch.sum((removed_links_mask * new_links_mask) == 1) / self.noRewires
             print("Overlap rate of removal and regrown links are: ", self.overlap_rate.item())
             
@@ -446,17 +452,20 @@ class sparse_layer(nn.Module):
         out = torch.matmul(x, self.weight_core)
             
         if self.bias is not None:
-            out += self.bias
+            x += self.bias
         
-        return out
+        return x
 
     @torch.no_grad()
     def sparse_bias(self):
         active_neurons = torch.sum(self.weight_mask, dim=0) > 0
         self.bias *= active_neurons
+
+    
     def reset_parameters(self):
         self.weight.data = (torch.randn(self.indim, self.outdim) * self.stdv).to(self.device)
         self.weight.data *= self.weight_mask
+
 
     def transform_bi_to_mo(self, xb):
         # create monopartite adjacency matrix
