@@ -32,7 +32,9 @@ def Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler)
         output = model(data)
         loss = CSE(output, target)
         loss.backward()
-
+        if "gradient" in args.regrow_method:
+            for layer in model.sparse_layers:
+                layer.core_grad = layer.weight_core.grad
         optimizer.step()
         if args.warmup and epoch < 1:
             warmup_scheduler.step()

@@ -349,7 +349,14 @@ class sparse_layer(nn.Module):
                 print("Regrowing threshold is 0!!!")
 
             new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires)
-            
+        elif self.regrow_method == "gradient":
+        
+            grad = torch.abs(self.core_grad)
+            grad[self.weight_mask==1]=0
+            thre = torch.sort(grad.ravel())[0][-self.noRewires-1]
+
+            new_links_mask[grad >= thre] = 1
+            new_links_mask[grad< thre] = 0
 
         elif self.regrow_method == "random":
             # Randomly regrow new links
@@ -432,7 +439,9 @@ class sparse_layer(nn.Module):
             #elif buffer == ''
 
     def forward(self, x):
-        self.weight_core = self.weight * self.weight_mask       
+        self.weight_core = self.weight * self.weight_mask  
+        if "gradient" in self.regrow_method and self.training:
+            self.weight_core.retain_grad()     
         x = torch.mm(x, self.weight_core)
             
         if self.bias is not None:

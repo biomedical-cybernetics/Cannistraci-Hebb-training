@@ -8,8 +8,9 @@ import compute_scores
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
 from scipy.stats import spearmanr
+import powerlaw
 
-def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples):
+def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples, T=1):
 
     if not isinstance(matrix, torch.Tensor):
         matrix = torch.tensor(matrix)
@@ -17,6 +18,7 @@ def regrow_scores_sampling_2d_torch(matrix, sampled_matrix, n_samples):
     flat_matrix = matrix.flatten()
     flat_matrix = torch.where(torch.isnan(flat_matrix), torch.zeros_like(flat_matrix), flat_matrix)
     # print(torch.max(flat_matrix))
+    flat_matrix = flat_matrix ** T
     probabilities = flat_matrix / flat_matrix.sum()
     sampled_flat_indices = torch.multinomial(probabilities, n_samples, replacement=False)
     
@@ -104,6 +106,7 @@ class sparse_layer(nn.Module):
         self.layer = layer
         self.T_decay = args.T_decay
         self.device = device
+        self.gamma = 30
 
         self.Tend = args.train_steps // args.update_interval
         self.mask = torch.rand(self.indim, self.outdim).to(self.device)
@@ -241,6 +244,7 @@ class sparse_layer(nn.Module):
         if int(torch.sum(self.weight_mask).item() - torch.sum(self.mask_after_removal).item()) < 0:
             print("------------------------------------------FALSE------------------------------------")
             print(self.args)
+            Warning("Number of removal weights is negative")
         
     @torch.no_grad()
     def regrow_connections(self):
@@ -329,15 +333,42 @@ class sparse_layer(nn.Module):
             new_links_mask[score >= thre] = 1
             new_links_mask[score< thre] = 0
 
+        elif self.regrow_method == "CH3_L3_soft_adaptive":
+            
+            xb = np.array(self.mask_after_removal.cpu())
 
-        elif self.regrow_method == "random":
-            # Randomly regrow new links
-            score = torch.rand(self.mask_after_removal.shape[0], self.mask_after_removal.shape[1])
-            score[self.mask_after_removal==1]=0
-            thre = torch.sort(score.ravel())[0][-self.noRewires-1]
+            x = self.transform_bi_to_mo(xb)
+            A = csr_matrix(x)
+            ir = A.indices
+            jc = A.indptr
+            scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
+            scores = scores_cell.reshape(self.N, self.N)
+            scores = scores[:self.indim, self.indim:]
 
-            new_links_mask[score >= thre] = 1
-            new_links_mask[score< thre] = 0
+            scores[self.mask_after_removal==1] = 0
+            
+
+
+            x_mono = self.transform_bi_to_mo(self.mask_after_removal.cpu().numpy())
+            degree = np.sum(x_mono, axis=0)
+            fit = powerlaw.Fit(degree)
+            self.gamma = fit.power_law.alpha
+
+            self.T = self.args.powerlaw_thre/self.gamma
+            new_links_mask = regrow_scores_sampling_2d_torch(scores, new_links_mask, self.noRewires, self.T)
+            
+            print(f"Current powerlaw gamma is: {self.gamma}, T: {self.T}")
+
+        elif self.regrow_method == "gradient":
+        
+            grad = torch.abs(self.core_grad)
+            grad[self.weight_mask==1]=0
+            thre = torch.sort(grad.ravel())[0][-self.noRewires-1]
+
+            new_links_mask[grad >= thre] = 1
+            new_links_mask[grad< thre] = 0
+        else:
+            assert False, "Regrowth method not implemented"
 
                 
         
@@ -407,7 +438,11 @@ class sparse_layer(nn.Module):
             #elif buffer == ''
 
     def forward(self, x):
-        self.weight_core = self.weight * self.weight_mask  
+
+    
+        self.weight_core = self.weight * self.weight_mask
+        if self.training and "gradient" in self.regrow_method:  
+            self.weight_core.retain_grad()
         out = torch.matmul(x, self.weight_core)
             
         if self.bias is not None:
