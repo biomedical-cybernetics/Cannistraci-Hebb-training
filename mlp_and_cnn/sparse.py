@@ -442,7 +442,7 @@ class sparse_layer(nn.Module):
         self.weight_core = self.weight * self.weight_mask  
         if "gradient" in self.regrow_method and self.training:
             self.weight_core.retain_grad()     
-        x = torch.mm(x, self.weight_core)
+        x = torch.matmul(x, self.weight_core)
             
         if self.bias is not None:
             x += self.bias

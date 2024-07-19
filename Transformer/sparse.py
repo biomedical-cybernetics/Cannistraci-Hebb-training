@@ -104,7 +104,7 @@ def find_last_pos_torch(array, value):
 
 
 class sparse_layer(nn.Module):
-    def __init__(self, indim, outdim, save_path, Tend, layer, device, args):
+    def __init__(self, indim, outdim, save_path, layer, device, args):
         super(sparse_layer, self).__init__()
         self.indim = indim
         self.outdim = outdim
@@ -115,18 +115,18 @@ class sparse_layer(nn.Module):
         self.regrow_method = args.regrow_method
         self.save_path = save_path
         self.adaptive_zeta = args.adaptive_zeta
-        self.Tend = Tend
         self.device = device
         self.layer = layer
-        self.early_stop = args.early_stop
+        # self.early_stop = args.early_stop
         self.stop_signal = False
-        self.early_stop_threshold = args.early_stop_threshold
         self.T = 1
         self.T_decay = args.T_decay
         
-        self.weight_mask = torch.rand(self.indim, self.outdim).to(self.device)
-        self.weight_mask[self.weight_mask < self.sparsity] = 0
-        self.weight_mask[self.weight_mask != 0] = 1
+        self.Tend = args.train_steps // args.update_interval
+        self.mask = torch.rand(self.indim, self.outdim).to(self.device)
+        self.mask[self.mask < self.sparsity] = 0
+        self.mask[self.mask != 0] = 1
+        self.register_buffer('weight_mask', self.mask)
         self.n_params = len(self.weight_mask.nonzero())
         print('numbers of weights ', self.n_params)
         self.args = args
@@ -185,7 +185,7 @@ class sparse_layer(nn.Module):
         self.weight.data *= self.weight_mask
 
         self.overlap_rate = 0
-        self.early_stop_signal = False
+        # self.early_stop_signal = False
         
         
     @torch.no_grad()
@@ -396,19 +396,19 @@ class sparse_layer(nn.Module):
             self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
             self.weight.data += (new_links_weight * (self.weight_mask == 0))
 
-        removed_links_mask = self.weight_mask - self.mask_after_removal
+        # removed_links_mask = self.weight_mask - self.mask_after_removal
         # update mask    
         self.weight_mask = self.mask_after_removal + new_links_mask
         self.new_links_mask = new_links_mask
         print('Number of weights after evolution: ', torch.sum(self.weight_mask).item())
         # Using early stop or not
-        if self.early_stop:
-            self.overlap_rate = torch.sum((removed_links_mask * new_links_mask) == 1) / self.noRewires
-            print("Overlap rate of removal and regrown links are: ", self.overlap_rate.item())
+        # if self.early_stop:
+        #     self.overlap_rate = torch.sum((removed_links_mask * new_links_mask) == 1) / self.noRewires
+        #     print("Overlap rate of removal and regrown links are: ", self.overlap_rate.item())
             
-            if self.overlap_rate > self.early_stop_threshold:
-                print("The evolution of topology has stopped!")
-                self.early_stop_signal = True
+        #     if self.overlap_rate > self.early_stop_threshold:
+        #         print("The evolution of topology has stopped!")
+        #         self.early_stop_signal = True
 
     @torch.no_grad()
     def clear_buffers(self):
@@ -452,9 +452,9 @@ class sparse_layer(nn.Module):
         out = torch.matmul(x, self.weight_core)
             
         if self.bias is not None:
-            x += self.bias
+            out += self.bias
         
-        return x
+        return out
 
     @torch.no_grad()
     def sparse_bias(self):
