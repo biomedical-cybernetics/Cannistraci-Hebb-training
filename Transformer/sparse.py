@@ -367,8 +367,41 @@ class sparse_layer(nn.Module):
             score[self.mask_after_removal==1]=0
             thre = torch.sort(score.ravel())[0][-self.noRewires-1]
 
-            new_links_mask[grad >= thre] = 1
-            new_links_mask[grad< thre] = 0
+            new_links_mask[score >= thre] = 1
+            new_links_mask[score< thre] = 0
+        elif self.regrow_method == "CH3_L3njp_soft":
+            DTPATHS1 = self.mask_after_removal.clone()
+            TDPATHS1 = DTPATHS1.transpose(1, 0)
+
+            DDPATHS2 = torch.matmul(DTPATHS1, TDPATHS1)
+            TTPATHS2 = torch.matmul(TDPATHS1, DTPATHS1)
+
+            BDDPATHS2 = DDPATHS2 != 0
+            BTTPATHS2 = TTPATHS2 != 0
+
+            elcl_DT = (torch.sum(DTPATHS1, dim=1) - DDPATHS2) * BDDPATHS2
+            elcl_TD = (torch.sum(TDPATHS1, dim=1) - TTPATHS2) * BTTPATHS2
+
+            elcl_DT[elcl_DT == 0] = 1
+            elcl_TD[elcl_TD == 0] = 1
+
+            elcl_DT -= 1
+            elcl_TD -= 1
+
+            elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
+            elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
+
+            elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
+            elcl_TD = torch.matmul(elcl_TD, TDPATHS1)
+
+            score_matrix = elcl_DT + elcl_TD.T
+            score_matrix = score_matrix * (self.mask_after_removal == 0)
+            thre = torch.sort(score_matrix.ravel())[0][-self.noRewires]
+            if thre == 0:
+                print("Regrowing threshold is 0!!!")
+                score_matrix = (score_matrix + 0.00001)*(self.mask_after_removal==0)
+
+            new_links_mask = regrow_scores_sampling_2d_torch(score_matrix, new_links_mask, self.noRewires)
         else:
             assert False, "Regrowth method not implemented"
 
