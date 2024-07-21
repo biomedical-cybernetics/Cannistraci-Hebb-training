@@ -56,6 +56,8 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     if opt.adaptive_zeta:
         opt.save_model += f"_az"
+    if opt.sst:
+        opt.save_model += f"_sst_{opt.sst}"
         
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
