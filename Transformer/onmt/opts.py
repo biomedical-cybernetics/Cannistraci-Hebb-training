@@ -255,6 +255,8 @@ def cht_opts(parser):
      parser.add_argument("--ws_beta", default=0.25, type=float)
      parser.add_argument("--powerlaw_thre", default=5, type=float)
      parser.add_argument("--early_stop", action="store_true")
+     parser.add_argument("--clear_buffer", action="store_true")
+     parser.add_argument("--sst", type=int, default=0)
 
 def preprocess_opts(parser):
     """ Pre-procesing options """

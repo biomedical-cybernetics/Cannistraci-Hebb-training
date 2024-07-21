@@ -402,6 +402,7 @@ class sparse_layer(nn.Module):
                 score_matrix = (score_matrix + 0.00001)*(self.mask_after_removal==0)
 
             new_links_mask = regrow_scores_sampling_2d_torch(score_matrix, new_links_mask, self.noRewires)
+
         else:
             assert False, "Regrowth method not implemented"
 
@@ -422,12 +423,12 @@ class sparse_layer(nn.Module):
         
         
         # update weights
-        if self.args.old_version:
-            self.weight.data *= self.mask_after_removal
-            self.weight.data += new_links_weight
-        else:
-            self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
-            self.weight.data += (new_links_weight * (self.weight_mask == 0))
+        # if self.args.old_version:
+        #     self.weight.data *= self.mask_after_removal
+        #     self.weight.data += new_links_weight
+        # else:
+        self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
+        self.weight.data += (new_links_weight * (self.weight_mask == 0))
 
         # removed_links_mask = self.weight_mask - self.mask_after_removal
         # update mask    

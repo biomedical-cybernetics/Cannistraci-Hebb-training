@@ -343,7 +343,7 @@ class Trainer(object):
                 break
 
             if self.opt.use_cht:
-                if self.opt.update_interval > 0 and (i + 1) % self.opt.update_interval == 0:
+                if self.opt.update_interval > 0 and (i + 1) % self.opt.update_interval == 0 and i >= self.opt.sst:
                     for n, m in self.model.named_modules():
                         if isinstance(m, sparse_layer):
                             m.remove_connections()
