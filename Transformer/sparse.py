@@ -355,7 +355,7 @@ class sparse_layer(nn.Module):
         elif self.regrow_method == "gradient":
         
             grad = torch.abs(self.core_grad)
-            grad[self.weight_mask==1]=0
+            grad[self.mask_after_removal==1]=0
             thre = torch.sort(grad.ravel())[0][-self.noRewires-1]
 
             new_links_mask[grad >= thre] = 1
