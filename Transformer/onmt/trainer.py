@@ -345,12 +345,9 @@ class Trainer(object):
                 break
             
             if self.opt.use_cht:
-
                 if self.opt.rigl_scheduler:
-                    print(self.pruner)
-                    if self.pruner():
-                        self.optimizer.step()
-
+                    self.pruner()
+                
 
                 elif self.opt.update_interval > 0 and (i + 1) % self.opt.update_interval == 0 and i >= self.opt.sst:
                     for n, m in self.model.named_modules():

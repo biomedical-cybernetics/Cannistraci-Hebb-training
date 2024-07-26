@@ -59,6 +59,8 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
         opt.save_model += f"_az"
     if opt.sst:
         opt.save_model += f"_sst_{opt.sst}"
+    if opt.rigl_scheduler:
+        opt.save_model += "_rigl_scheduler"
         
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
@@ -112,7 +114,7 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
 
     if model_opt.use_cht and model_opt.rigl_scheduler:
-        pruner = RigLScheduler(model, optim, dense_allocation=1-model_opt.sparsity, alpha=model_opt.zeta, delta=model_opt.update_interval, static_topo=False, T_end=model_opt.train_steps, ignore_linear_layers=False, grad_accumulation_n=1)
+        pruner = RigLScheduler(model, optim, dense_allocation=1-model_opt.sparsity, alpha=model_opt.zeta, delta=model_opt.update_interval, static_topo=False, T_end=model_opt.train_steps, ignore_linear_layers=False, grad_accumulation_n=1, args=model_opt)
 
     # from onmt.encoders.sparse import sparse_layer
     # for module in model.modules():

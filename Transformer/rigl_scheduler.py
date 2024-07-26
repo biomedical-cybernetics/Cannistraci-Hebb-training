@@ -5,6 +5,7 @@ import torch
 import torch.distributed as dist
 
 from rigl_util import get_W
+from sparse_topology_initialization import create_ws_sparse_scheduler
 
 
 class IndexMaskHook:
@@ -43,7 +44,7 @@ def _create_step_wrapper(scheduler, optimizer):
 
 class RigLScheduler:
 
-    def __init__(self, model, optimizer, dense_allocation=1, T_end=None, sparsity_distribution='uniform', ignore_linear_layers=True, delta=100, alpha=0.3, static_topo=False, grad_accumulation_n=1, state_dict=None):
+    def __init__(self, model, optimizer, dense_allocation=1, T_end=None, sparsity_distribution='uniform', ignore_linear_layers=True, delta=100, alpha=0.3, static_topo=False, grad_accumulation_n=1, state_dict=None, args=None):
         if dense_allocation <= 0 or dense_allocation > 1:
             raise Exception('Dense allocation must be on the interval (0, 1]. Got: %f' % dense_allocation)
 
@@ -57,6 +58,7 @@ class RigLScheduler:
             
         self.dense_allocation = dense_allocation
         self.N = [torch.numel(w) for w in self.W]
+        self.args = args
 
         if state_dict is not None:
             self.load_state_dict(state_dict)
@@ -75,15 +77,15 @@ class RigLScheduler:
                 # when using uniform sparsity, the first layer is always 100% dense
                 # UNLESS there is only 1 layer
                 is_first_layer = i == 0
-                if is_first_layer and self.sparsity_distribution == 'uniform' and len(self.W) > 1:
-                    self.S.append(0)
+                # if is_first_layer and self.sparsity_distribution == 'uniform' and len(self.W) > 1:
+                #     self.S.append(0)
 
-                elif is_linear and self.ignore_linear_layers:
-                    # if choosing to ignore linear layers, keep them 100% dense
-                    self.S.append(0)
+                # elif is_linear and self.ignore_linear_layers:
+                #     # if choosing to ignore linear layers, keep them 100% dense
+                #     self.S.append(0)
 
-                else:
-                    self.S.append(1-dense_allocation)
+                # else:
+                self.S.append(1-dense_allocation)
 
             # randomly sparsify model according to S
             self.random_sparsify()
@@ -106,6 +108,8 @@ class RigLScheduler:
                 continue
 
             if getattr(w, '_has_rigl_backward_hook', False):
+                print(i, w.shape)
+                # print()
                 raise Exception('This model already has been registered to a RigLScheduler.')
         
             self.backward_hook_objects.append(IndexMaskHook(i, self))
@@ -156,14 +160,17 @@ class RigLScheduler:
             if self.S[l] <= 0:
                 self.backward_masks.append(None)
                 continue
-
-            n = self.N[l]
-            s = int(self.S[l] * n)
-            perm = torch.randperm(n)
-            perm = perm[:s]
-            flat_mask = torch.ones(n, device=w.device)
-            flat_mask[perm] = 0
-            mask = torch.reshape(flat_mask, w.shape)
+            
+            if self.args.WS:
+                mask = create_ws_sparse_scheduler(self.S[l], w, self.args)
+            else:
+                n = self.N[l]
+                s = int(self.S[l] * n)
+                perm = torch.randperm(n)
+                perm = perm[:s]
+                flat_mask = torch.ones(n, device=w.device)
+                flat_mask[perm] = 0
+                mask = torch.reshape(flat_mask, w.shape)
 
             if is_dist:
                 dist.broadcast(mask, 0)
@@ -182,9 +189,9 @@ class RigLScheduler:
         S_str = '['
         sparsity_percentages = []
         total_params = 0
-        total_conv_params = 0
+        # total_conv_params = 0
         total_nonzero = 0
-        total_conv_nonzero = 0
+        # total_conv_nonzero = 0
 
         for N, S, mask, W, is_linear in zip(self.N, self.S, self.backward_masks, self.W, self._linear_layers_mask):
             actual_S = torch.sum(W[mask == 0] == 0).item()
@@ -194,9 +201,9 @@ class RigLScheduler:
             sparsity_percentages.append(sp_p)
             total_params += N
             total_nonzero += N-actual_S
-            if not is_linear:
-                total_conv_nonzero += N-actual_S
-                total_conv_params += N
+            # if not is_linear:
+            #     total_conv_nonzero += N-actual_S
+            #     total_conv_params += N
 
         N_str = N_str[:-2] + ']'
         S_str = S_str[:-2] + ']'
@@ -204,7 +211,7 @@ class RigLScheduler:
         s += 'nonzero_params=' + N_str + ',\n'
         s += 'nonzero_percentages=' + S_str + ',\n'
         s += 'total_nonzero_params=' + ('%i/%i (%.2f%%)' % (total_nonzero, total_params, float(total_nonzero)/float(total_params)*100)) + ',\n'
-        s += 'total_CONV_nonzero_params=' + ('%i/%i (%.2f%%)' % (total_conv_nonzero, total_conv_params, float(total_conv_nonzero)/float(total_conv_params)*100)) + ',\n'
+        # s += 'total_CONV_nonzero_params=' + ('%i/%i (%.2f%%)' % (total_conv_nonzero, total_conv_params, float(total_conv_nonzero)/float(total_conv_params)*100)) + ',\n'
         s += 'step=' + str(self.step) + ',\n'
         s += 'num_rigl_steps=' + str(self.rigl_steps) + ',\n'
         s += 'ignoring_linear_layers=' + str(self.ignore_linear_layers) + ',\n'
@@ -270,6 +277,7 @@ class RigLScheduler:
         if self.static_topo:
             return True
         if (self.step % self.delta_T) == 0 and self.step < self.T_end: # check schedule
+            print(self)
             self._rigl_step()
             self.rigl_steps += 1
             return False
@@ -292,8 +300,8 @@ class RigLScheduler:
             current_mask = self.backward_masks[l]
 
             # calculate raw scores
-            score_drop = torch.abs(w)
-            score_grow = torch.abs(self.backward_hook_objects[l].dense_grad)
+            
+            
 
             # if is distributed, synchronize scores
             if is_dist:
@@ -310,38 +318,100 @@ class RigLScheduler:
             n_keep = n_ones - n_prune
 
             # create drop mask
-            _, sorted_indices = torch.topk(score_drop.view(-1), k=n_total)
-            new_values = torch.where(
+            if self.args.remove_method == "weight_magnitude":
+                score_drop = torch.abs(w)
+                _, sorted_indices = torch.topk(score_drop.view(-1), k=n_total)
+                new_values = torch.where(
                             torch.arange(n_total, device=w.device) < n_keep,
                             torch.ones_like(sorted_indices),
                             torch.zeros_like(sorted_indices))
-            mask1 = new_values.scatter(0, sorted_indices, new_values)
+                mask1 = new_values.scatter(0, sorted_indices, new_values)
 
-            # flatten grow scores
-            score_grow = score_grow.view(-1)
 
-            # set scores of the enabled connections(ones) to min(s) - 1, so that they have the lowest scores
-            score_grow_lifted = torch.where(
-                                mask1 == 1, 
-                                torch.ones_like(mask1) * (torch.min(score_grow) - 1),
-                                score_grow)
 
-            # create grow mask
-            _, sorted_indices = torch.topk(score_grow_lifted, k=n_total)
-            new_values = torch.where(
-                            torch.arange(n_total, device=w.device) < n_prune,
-                            torch.ones_like(sorted_indices),
-                            torch.zeros_like(sorted_indices))
-            mask2 = new_values.scatter(0, sorted_indices, new_values)
+            elif self.args.remove_method == "weight_magnitude_soft":
+                score_drop = torch.abs(w)
+                T = 1 + self.step * (2 / self.T_end)
+                # print(f"Current Temperature: {T}")
+
+                mask1 = torch.zeros_like(score_drop.view(-1)).to(w.device)
+                flat_matrix = (score_drop.flatten())** T
+                probabilities = flat_matrix / flat_matrix.sum()
+
+                sampled_flat_indices = torch.multinomial(probabilities, n_keep, replacement=False)
+                mask1[sampled_flat_indices] = 1
+                
+            else:
+                raise NotImplementedError
+            
+            mask1_reshape = torch.reshape(mask1, current_mask.shape)
+
+            if self.args.regrow_method == "gradient":
+                score_grow = torch.abs(self.backward_hook_objects[l].dense_grad)
+                # flatten grow scores
+                score_grow = score_grow.view(-1)
+
+                # set scores of the enabled connections(ones) to min(s) - 1, so that they have the lowest scores
+                score_grow_lifted = torch.where(
+                                    mask1 == 1, 
+                                    torch.ones_like(mask1) * (torch.min(score_grow) - 1),
+                                    score_grow)
+
+                # create grow mask
+                _, sorted_indices = torch.topk(score_grow_lifted, k=n_total)
+                new_values = torch.where(
+                                torch.arange(n_total, device=w.device) < n_prune,
+                                torch.ones_like(sorted_indices),
+                                torch.zeros_like(sorted_indices))
+                mask2 = new_values.scatter(0, sorted_indices, new_values)
+
+            elif self.args.regrow_method == "CH3_L3njp_soft":
+                
+
+                DTPATHS1 = mask1_reshape.clone()
+                TDPATHS1 = DTPATHS1.transpose(1, 0)
+
+                DDPATHS2 = torch.matmul(DTPATHS1, TDPATHS1)
+                TTPATHS2 = torch.matmul(TDPATHS1, DTPATHS1)
+
+                BDDPATHS2 = DDPATHS2 != 0
+                BTTPATHS2 = TTPATHS2 != 0
+
+                elcl_DT = (torch.sum(DTPATHS1, dim=1) - DDPATHS2) * BDDPATHS2
+                elcl_TD = (torch.sum(TDPATHS1, dim=1) - TTPATHS2) * BTTPATHS2
+
+                elcl_DT[elcl_DT == 0] = 1
+                elcl_TD[elcl_TD == 0] = 1
+
+                elcl_DT -= 1
+                elcl_TD -= 1
+
+                elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
+                elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
+
+                elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
+                elcl_TD = torch.matmul(elcl_TD, TDPATHS1)
+
+                score_matrix = elcl_DT + elcl_TD.T
+                score_matrix = score_matrix * (mask1_reshape == 0)
+                thre = torch.sort(score_matrix.ravel())[0][-n_prune]
+                if thre == 0:
+                    print("Regrowing threshold is 0!!!")
+                    score_matrix = (score_matrix + 0.00001)*(self.mask_after_removal==0)
+
+                mask2 = torch.zeros_like(score_matrix.view(-1)).to(w.device)
+                flat_matrix = (score_matrix.flatten())** T
+                probabilities = flat_matrix / flat_matrix.sum()
+
+                sampled_flat_indices = torch.multinomial(probabilities, n_prune, replacement=False)
+                mask2[sampled_flat_indices] = 1
+
+            
 
             mask2_reshaped = torch.reshape(mask2, current_mask.shape)
             grow_tensor = torch.zeros_like(w)
             
-            REINIT_WHEN_SAME = False
-            if REINIT_WHEN_SAME:
-                raise NotImplementedError()
-            else:
-                new_connections = ((mask2_reshaped == 1) & (current_mask == 0))
+            new_connections = ((mask2_reshaped == 1) & (current_mask == 0))
 
             # update new weights to be initialized as zeros and update the weight tensors
             new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)

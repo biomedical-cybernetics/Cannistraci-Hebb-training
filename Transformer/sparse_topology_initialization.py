@@ -158,24 +158,26 @@ def soft_resort(in_neuron_degree):
 
 
 def create_ws_sparse(layer, args):
-    K = (1- layer.sparsity) * layer.indim * layer.outdim / (layer.indim + layer.outdim)
+    indim = min(layer.indim, layer.outdim)
+    outdim = max(layer.indim, layer.outdim)
+    K = (1- layer.sparsity) * indim * outdim / (indim + outdim)
     
     K1 = int(K)
     K2 = int(K) + 1
-    dim = max(layer.outdim, layer.indim)
+    dim = max(outdim, indim)
     my_list = [K1] * int(dim * (K2 - K)) + [K2] * int(dim * (K-K1) + 1)
     random.shuffle(my_list)
     
-    adj = np.zeros((layer.indim, layer.outdim))
+    adj = np.zeros((indim, outdim))
 
-    rate = layer.outdim/layer.indim
-    for i in range(layer.indim):
-        idx = [(int(i*rate) + j) % layer.outdim for j in range(my_list[i])]
+    rate = outdim/indim
+    for i in range(indim):
+        idx = [(int(i*rate) + j) % outdim for j in range(my_list[i])]
         adj[i, idx] = 1 
-    rate = layer.indim/layer.outdim
+    rate = indim/outdim
     random.shuffle(my_list)
-    for i in range(layer.outdim):
-        idx = [(int(i*rate) + j + 1) % layer.indim for j in range(my_list[i])]
+    for i in range(outdim):
+        idx = [(int(i*rate) + j + 1) % indim for j in range(my_list[i])]
         adj[idx, i] = 1 
         
     # rewiring
@@ -183,8 +185,8 @@ def create_ws_sparse(layer, args):
         randomness = np.random.binomial(1, p=args.ws_beta, size=int(np.sum(adj)))
         # print(randomness)
         count = 0
-        for i in range(layer.indim):
-            for j in range(layer.outdim):
+        for i in range(indim):
+            for j in range(outdim):
                 if adj[i][j] == 1:
                     if randomness[count] == 1:
                         adj[i][j] = 0
@@ -192,17 +194,77 @@ def create_ws_sparse(layer, args):
                     count += 1
         
         # regrow
-        noRewires = layer.n_params - np.sum(adj)
+        noRewires = int(layer.sparsity * indim * outdim) - np.sum(adj)
         nrAdd = 0
         while (nrAdd < noRewires):
-            i = np.random.randint(0, layer.indim)
-            j = np.random.randint(0, layer.outdim)
+            i = np.random.randint(0, indim)
+            j = np.random.randint(0, outdim)
             if adj[i][j] == 0:
                 nrAdd += 1
                 adj[i][j] = 1
         
         print(np.sum(adj), noRewires)
-    layer.weight_mask = torch.LongTensor(adj).to(layer.device)
+
+    if layer.indim != indim:
+        layer.weight_mask = torch.Tensor(adj).to(layer.device).t()
+    else:
+        layer.weight_mask = torch.Tensor(adj).to(layer.device)
+    
+
+
+
+def create_ws_sparse_scheduler(sparsity, w, args):
+    indim = min(w.shape[0], w.shape[1])
+    outdim = max(w.shape[0], w.shape[1])
+    K = (1- sparsity) * indim * outdim / (indim + outdim)
+    
+    K1 = int(K)
+    K2 = int(K) + 1
+    dim = max(outdim, indim)
+    my_list = [K1] * int(dim * (K2 - K)) + [K2] * int(dim * (K-K1) + 1)
+    random.shuffle(my_list)
+    
+    adj = np.zeros((indim, outdim))
+
+    rate = outdim/indim
+    for i in range(indim):
+        idx = [(int(i*rate) + j) % outdim for j in range(my_list[i])]
+        adj[i, idx] = 1 
+    rate = indim/outdim
+    random.shuffle(my_list)
+    for i in range(outdim):
+        idx = [(int(i*rate) + j + 1) % indim for j in range(my_list[i])]
+        adj[idx, i] = 1 
+        
+    # rewiring
+    if args.ws_beta != 0:
+        randomness = np.random.binomial(1, p=args.ws_beta, size=int(np.sum(adj)))
+        # print(randomness)
+        count = 0
+        for i in range(indim):
+            for j in range(outdim):
+                if adj[i][j] == 1:
+                    if randomness[count] == 1:
+                        adj[i][j] = 0
+                    
+                    count += 1
+        
+        # regrow
+        noRewires = int(sparsity * indim * outdim) - np.sum(adj)
+        nrAdd = 0
+        while (nrAdd < noRewires):
+            i = np.random.randint(0, indim)
+            j = np.random.randint(0, outdim)
+            if adj[i][j] == 0:
+                nrAdd += 1
+                adj[i][j] = 1
+        
+        print(np.sum(adj), noRewires)
+    if w.shape[0] != indim:
+        return torch.LongTensor(adj).to(w.device).t()
+
+    return torch.LongTensor(adj).to(w.device)
+    # layer.weight_mask = torch.LongTensor(adj).to(layer.device)
 
 
 
