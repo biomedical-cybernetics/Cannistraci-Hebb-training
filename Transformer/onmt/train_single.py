@@ -13,6 +13,7 @@ from onmt.trainer import build_trainer
 from onmt.models import build_model_saver
 from onmt.utils.logging import init_logger, logger
 from onmt.utils.parse import ArgumentParser
+from rigl_scheduler import RigLScheduler
 
 
 def _check_save_model_path(opt):
@@ -98,6 +99,8 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     # Build model.
     model = build_model(model_opt, opt, fields, checkpoint)
+
+    
     n_params, enc, dec = _tally_parameters(model)
     logger.info('encoder: %d' % enc)
     logger.info('decoder: %d' % dec)
@@ -106,6 +109,11 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     # Build optimizer.
     optim = Optimizer.from_opt(model, model_opt, opt, checkpoint=checkpoint)
+
+
+    if model_opt.use_cht and model_opt.rigl_scheduler:
+        pruner = RigLScheduler(model, optim, dense_allocation=1-model_opt.sparsity, alpha=model_opt.zeta, delta=model_opt.update_interval, static_topo=False, T_end=model_opt.train_steps, ignore_linear_layers=False, grad_accumulation_n=1)
+
     # from onmt.encoders.sparse import sparse_layer
     # for module in model.modules():
     #     if isinstance(module, sparse_layer):
@@ -116,7 +124,11 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     # Build model saver
     model_saver = build_model_saver(model_opt, opt, model, fields, optim)
 
-    trainer = build_trainer(
+    if model_opt.rigl_scheduler:
+        trainer = build_trainer(
+        opt, device_id, model, fields, optim, model_saver=model_saver, pruner=pruner)
+    else:
+        trainer = build_trainer(
         opt, device_id, model, fields, optim, model_saver=model_saver)
 
     if batch_queue is None:

@@ -18,7 +18,7 @@ from onmt.utils.logging import logger
 from sparse import sparse_layer
 from collections import defaultdict
 
-def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
+def build_trainer(opt, device_id, model, fields, optim, model_saver=None, pruner=None):
     """
     Simplify `Trainer` creation based on user `opt`s*
 
@@ -92,7 +92,8 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
                            dropout=dropout,
                            dropout_steps=dropout_steps,
                            source_noise=source_noise,
-                           opt=opt)
+                           opt=opt,
+                           pruner=pruner)
     return trainer
 
 
@@ -130,7 +131,7 @@ class Trainer(object):
                  report_manager=None, with_align=False, model_saver=None,
                  average_decay=0, average_every=1, model_dtype='fp32',
                  earlystopper=None, dropout=[0.3], dropout_steps=[0],
-                 source_noise=None, max_grad_norm=1, opt=None):
+                 source_noise=None, max_grad_norm=1, opt=None, pruner=None):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
@@ -158,6 +159,7 @@ class Trainer(object):
         self.dropout_steps = dropout_steps
         self.source_noise = source_noise
         self.opt = opt
+        self.pruner = pruner
 
         for i in range(len(self.accum_count_l)):
             assert self.accum_count_l[i] > 0
@@ -341,9 +343,16 @@ class Trainer(object):
 
             if train_steps > 0 and step >= train_steps:
                 break
-
+            
             if self.opt.use_cht:
-                if self.opt.update_interval > 0 and (i + 1) % self.opt.update_interval == 0 and i >= self.opt.sst:
+
+                if self.opt.rigl_scheduler:
+                    print(self.pruner)
+                    if self.pruner():
+                        self.optimizer.step()
+
+
+                elif self.opt.update_interval > 0 and (i + 1) % self.opt.update_interval == 0 and i >= self.opt.sst:
                     for n, m in self.model.named_modules():
                         if isinstance(m, sparse_layer):
                             m.remove_connections()

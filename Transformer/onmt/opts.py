@@ -232,6 +232,7 @@ def model_opts(parser):
 
 def cht_opts(parser):
      group = parser.add_argument_group('cht')
+     group.add_argument("--rigl_scheduler", action="store_true")
      group.add_argument("--iterative_warmup_steps", type=int, default=0)
      group.add_argument("--update_interval", type=int, default=1)
      group.add_argument("--use_cht", action="store_true")

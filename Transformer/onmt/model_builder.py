@@ -23,6 +23,8 @@ from onmt.utils.utils import *
 from sparse import sparse_layer
 from sparse_topology_initialization import create_ws_sparse
 
+from rigl_scheduler import RigLScheduler
+
 def build_embeddings(opt, text_field, for_encoder=True):
     """
     Args:
@@ -77,7 +79,7 @@ def build_encoder(opt, embeddings, save_path=None, device=None):
     """
     enc_type = opt.encoder_type if opt.model_type == "text" \
         or opt.model_type == "vec" else opt.model_type
-    if opt.use_cht:
+    if opt.use_cht and not opt.rigl_scheduler:
         return str2enc[enc_type].from_opt(opt, save_path, embeddings, device)
     else:
         return str2enc[enc_type].from_opt(opt, embeddings)
@@ -93,7 +95,7 @@ def build_decoder(opt, embeddings, save_path=None, device=None):
     dec_type = "ifrnn" if opt.decoder_type == "rnn" and opt.input_feed \
                else opt.decoder_type
     
-    if opt.use_cht:
+    if opt.use_cht and not opt.rigl_scheduler:
         return str2dec[dec_type].from_opt(opt, save_path, embeddings, device)
     else:
         return str2dec[dec_type].from_opt(opt, embeddings)
@@ -255,7 +257,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
             for p in generator.parameters():
                 if p.dim() > 1:
                     xavier_uniform_(p)
-
+        
     model.generator = generator
     model.to(device)
     print("origin model requires_grad == False")
