@@ -113,7 +113,7 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     optim = Optimizer.from_opt(model, model_opt, opt, checkpoint=checkpoint)
 
 
-    if model_opt.use_cht and model_opt.rigl_scheduler:
+    if model_opt.rigl_scheduler:
         pruner = RigLScheduler(model, optim, dense_allocation=1-model_opt.sparsity, alpha=model_opt.zeta, delta=model_opt.update_interval, static_topo=False, T_end=model_opt.train_steps, ignore_linear_layers=False, grad_accumulation_n=1, args=model_opt)
 
     # from onmt.encoders.sparse import sparse_layer

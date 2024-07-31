@@ -344,34 +344,8 @@ class Trainer(object):
             if train_steps > 0 and step >= train_steps:
                 break
             
-            if self.opt.use_cht:
-                if self.opt.rigl_scheduler:
-                    self.pruner()
-                
-
-                elif self.opt.update_interval > 0 and (i + 1) % self.opt.update_interval == 0 and i >= self.opt.sst:
-                    for n, m in self.model.named_modules():
-                        if isinstance(m, sparse_layer):
-                            m.remove_connections()
-                    
-                    if self.opt.chain_removal:
-                        for chain in self.qk_chain_list:
-                            qk_chain_removal(chain[0], chain[1])
-
-                        for chain in self.chain_list:
-                            chain_removal(chain)
-
-                    for n, m in self.model.named_modules():
-                        if isinstance(m, sparse_layer):
-                            m.regrow_connections()
-                            m.epoch += 1
-                    
-                    if self.opt.clear_buffer:
-                        # clear the nonexisting links' buffer
-                        for _, m in self.model.named_modules():
-                            if isinstance(m, sparse_layer):
-                                for state in optimizer_state_list:
-                                    self.optim._optimizer.state[m.weight][state] *= m.weight_mask
+            if self.opt.rigl_scheduler:
+                self.pruner()
 
 
 

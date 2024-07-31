@@ -79,10 +79,7 @@ def build_encoder(opt, embeddings, save_path=None, device=None):
     """
     enc_type = opt.encoder_type if opt.model_type == "text" \
         or opt.model_type == "vec" else opt.model_type
-    if opt.use_cht and not opt.rigl_scheduler:
-        return str2enc[enc_type].from_opt(opt, save_path, embeddings, device)
-    else:
-        return str2enc[enc_type].from_opt(opt, embeddings)
+    return str2enc[enc_type].from_opt(opt, embeddings)
 
 
 def build_decoder(opt, embeddings, save_path=None, device=None):
@@ -95,10 +92,7 @@ def build_decoder(opt, embeddings, save_path=None, device=None):
     dec_type = "ifrnn" if opt.decoder_type == "rnn" and opt.input_feed \
                else opt.decoder_type
     
-    if opt.use_cht and not opt.rigl_scheduler:
-        return str2dec[dec_type].from_opt(opt, save_path, embeddings, device)
-    else:
-        return str2dec[dec_type].from_opt(opt, embeddings)
+    return str2dec[dec_type].from_opt(opt, embeddings)
 
 
 def load_test_model(opt, model_path=None):
@@ -166,11 +160,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         src_emb = None
 
     # Build encoder
-    if model_opt.use_cht:
-        save_path = "transformer/encoder/"    
-        encoder = build_encoder(model_opt, src_emb, save_path, device)
-    else:
-        encoder = build_encoder(model_opt, src_emb)
+
+    encoder = build_encoder(model_opt, src_emb)
 
 
     
@@ -186,11 +177,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         tgt_emb.word_lut.weight = src_emb.word_lut.weight
 
     # Build decoder
-    if model_opt.use_cht:
-        save_path = "transformer/decoder/"    
-        decoder = build_decoder(model_opt, tgt_emb, save_path, device=device)
-    else:
-        decoder = build_decoder(model_opt, tgt_emb)
+
+    decoder = build_decoder(model_opt, tgt_emb)
 
     
 
@@ -250,7 +238,6 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
             for p in generator.parameters():
                 p.data.uniform_(-model_opt.param_init, model_opt.param_init)
         if model_opt.param_init_glorot:
-            # if not model_opt.use_cht:
             for p in model.parameters():
                 if p.dim() > 1:
                     xavier_uniform_(p)

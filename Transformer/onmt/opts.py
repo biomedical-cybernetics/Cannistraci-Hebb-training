@@ -235,7 +235,6 @@ def cht_opts(parser):
      group.add_argument("--rigl_scheduler", action="store_true")
      group.add_argument("--iterative_warmup_steps", type=int, default=0)
      group.add_argument("--update_interval", type=int, default=1)
-     group.add_argument("--use_cht", action="store_true")
      group.add_argument("--sparsity", type=float, default=0.99, help="directly give the sparsity to each layer")
      group.add_argument("--zeta", type=float, default=0.3, help="the fraction of removal and regrown links")
      group.add_argument("--remove_method", type=str, default="weight_magnitude", help="how to remove links, Magnitude or MEST")
