@@ -3,6 +3,7 @@ from torchvision import datasets, transforms
 from scipy.io import loadmat, savemat
 import numpy as np
 import random
+import torch.nn.functional as F
 
 def load_calib_dataset(args, data_dir='./data'):
     if args.dataset == "MNIST":
@@ -38,9 +39,33 @@ def load_calib_dataset(args, data_dir='./data'):
                     shuffle=True)
         input_of_sparse_layer = np.zeros((784,112800))
     return dataloader, input_of_sparse_layer
-        
 
-def create_sparse_topological_initialization(args, model, filename=None):
+def rewire_connections(layer):
+    new_matrix = torch.zeros_like(layer.weight_mask).to(layer.device)
+
+    # 获取矩阵的列数和行数
+    cols = new_matrix.shape[1]
+    rows = new_matrix.shape[0]
+
+    # 对每一列进行处理
+    for i in range(cols):
+        # 当前列
+        column = layer.weight_mask[:, i]
+        
+        # 计算当前列中非零元素的数量
+        num_connections = column.nonzero().numel()
+        
+        # 生成新的随机位置
+        new_positions = torch.randperm(rows)[:num_connections]
+        
+        # 在新的随机位置设置为1或原始非零值
+        new_matrix[new_positions, i] = column[column != 0]
+
+    layer.weight_mask = new_matrix
+                
+
+
+def create_sparse_topological_initialization(args, model, filename=None, eng=None):
     
     if args.self_correlated_sparse:
         dataloader, input_of_sparse_layer = load_calib_dataset(args, data_dir='./data')
@@ -58,19 +83,47 @@ def create_sparse_topological_initialization(args, model, filename=None):
             print("done")
             
             savemat(filename + "/corr.mat", {"corr":corr})
-        create_self_correlated_sparse(model, corr, args.dim)
+        create_self_correlated_sparse(model, corr, args.dim, args.soft_csti, args.noise_csti)
     
     elif args.BA:
-        for layer in model.sparse_layers:
+        for i, layer in enumerate(model.sparse_layers):
             create_ba_sparse(layer) 
+            if i == 0 and args.rewire_first_layer:
+                rewire_connections(layer)
+            
 
     elif args.WS:
         for layer in model.sparse_layers:
             create_ws_sparse(layer, args)
             
-    
-
+    # elif args.load_existing_topology:
+    #     for i, layer in enumerate(model.sparse_layers):
+    #         adj = loadmat(f"{args.load_existing_topology}/{i}.mat")["adjacency_matrix"]
+    #         layer.weight_mask = torch.Tensor(adj).to(layer.device)
             
+    
+    if args.soft_resort or args.rigid_resort:
+        for i in range(len(model.sparse_layers)-1):
+            out_neuron_degree = torch.sum(model.sparse_layers[i].weight_mask, dim=0, dtype=torch.float32)
+            in_neuron_degree = torch.sum(model.sparse_layers[i+1].weight_mask, dim=1, dtype=torch.float32)
+            
+            if args.rigid_resort:
+                out_neuron_idx = torch.sort(out_neuron_degree)[1]
+                in_neuron_idx = torch.sort(in_neuron_degree)[1]
+                model.sparse_layers[i].weight_mask = model.sparse_layers[i].weight_mask[:, out_neuron_idx]
+                model.sparse_layers[i+1].weight_mask = model.sparse_layers[i+1].weight_mask[in_neuron_idx, :]
+                
+            elif args.soft_resort:
+                out_neuron_idx = torch.sort(out_neuron_degree)[1]
+                model.sparse_layers[i].weight_mask = model.sparse_layers[i].weight_mask[:, out_neuron_idx]
+                in_neuron_idx = soft_resort(in_neuron_degree)
+                model.sparse_layers[i+1].weight_mask = model.sparse_layers[i+1].weight_mask[in_neuron_idx, :]
+                
+def soft_resort(in_neuron_degree):
+    sampled_indices = torch.multinomial(in_neuron_degree, num_samples=in_neuron_degree.shape[0], replacement=False)
+    return sampled_indices
+
+
 def create_ws_sparse(layer, args):
     indim = min(layer.indim, layer.outdim)
     outdim = max(layer.indim, layer.outdim)
@@ -108,7 +161,7 @@ def create_ws_sparse(layer, args):
                     count += 1
         
         # regrow
-        noRewires = int(layer.sparsity * indim * outdim) - np.sum(adj)
+        noRewires = int((1-layer.sparsity) * indim * outdim) - np.sum(adj)
         nrAdd = 0
         while (nrAdd < noRewires):
             i = np.random.randint(0, indim)
@@ -123,6 +176,62 @@ def create_ws_sparse(layer, args):
         layer.weight_mask = torch.Tensor(adj).to(layer.device).t()
     else:
         layer.weight_mask = torch.Tensor(adj).to(layer.device)
+    
+
+
+
+def create_ws_sparse_scheduler(sparsity, w, args):
+    indim = min(w.shape[0], w.shape[1])
+    outdim = max(w.shape[0], w.shape[1])
+    K = (1- sparsity) * indim * outdim / (indim + outdim)
+    
+    K1 = int(K)
+    K2 = int(K) + 1
+    dim = max(outdim, indim)
+    my_list = [K1] * int(dim * (K2 - K)) + [K2] * int(dim * (K-K1) + 1)
+    random.shuffle(my_list)
+    
+    adj = np.zeros((indim, outdim))
+
+    rate = outdim/indim
+    for i in range(indim):
+        idx = [(int(i*rate) + j) % outdim for j in range(my_list[i])]
+        adj[i, idx] = 1 
+    rate = indim/outdim
+    random.shuffle(my_list)
+    for i in range(outdim):
+        idx = [(int(i*rate) + j + 1) % indim for j in range(my_list[i])]
+        adj[idx, i] = 1 
+        
+    # rewiring
+    if args.ws_beta != 0:
+        randomness = np.random.binomial(1, p=args.ws_beta, size=int(np.sum(adj)))
+        # print(randomness)
+        count = 0
+        for i in range(indim):
+            for j in range(outdim):
+                if adj[i][j] == 1:
+                    if randomness[count] == 1:
+                        adj[i][j] = 0
+                    
+                    count += 1
+        
+        # regrow
+        noRewires = int((1-sparsity) * indim * outdim) - np.sum(adj)
+        nrAdd = 0
+        while (nrAdd < noRewires):
+            i = np.random.randint(0, indim)
+            j = np.random.randint(0, outdim)
+            if adj[i][j] == 0:
+                nrAdd += 1
+                adj[i][j] = 1
+        
+        print(np.sum(adj), noRewires)
+    if w.shape[0] != indim:
+        return torch.LongTensor(adj).to(w.device).t()
+
+    return torch.LongTensor(adj).to(w.device)
+    # layer.weight_mask = torch.LongTensor(adj).to(layer.device)
 
 
 
@@ -224,7 +333,56 @@ def create_ba_sparse(layer):
     print(int(np.sum(final_adj)))
     layer.weight_mask = torch.Tensor(final_adj).to(layer.device)
     
-def create_self_correlated_sparse(model, corr, dim):
+def create_self_correlated_sparse(model, corr, dim, soft=False, noise=False):
+    isnan = np.isnan(corr)
+    corr[isnan] = 0
+    for i in range(corr.shape[0]):
+        corr[i, i] = 0
+    
+    if noise:
+        corr += np.random.randn(corr.shape[0], corr.shape[1])
+    # 1x of the dimension
+    if dim == 1:
+        for i in range(len(model.sparse_layers)):
+            number_of_links = model.sparse_layers[i].n_params
+            update_topology(model.sparse_layers[i], corr, number_of_links, soft)
+
+    # 2x of the dimension
+    elif dim == 2:
+        dimension = corr.shape[0] * 2
+        expanded_dimension = np.zeros((dimension, dimension))
+        expanded_dimension[:dimension//2, :dimension//2] = corr
+        expanded_dimension[:dimension//2, dimension//2:] = corr
+        expanded_dimension[dimension//2:, :dimension//2] = corr
+        expanded_dimension[dimension//2:, dimension//2:] = corr
+        
+        for i in range(len(model.sparse_layers)):
+            number_of_links = model.sparse_layers[i].n_params
+            if i == 0:
+                first_layer = expanded_dimension[:dimension//2, :].copy()
+                update_topology(model.sparse_layers[i], first_layer, number_of_links, soft)
+            else:
+                update_topology(model.sparse_layers[i], expanded_dimension, number_of_links, soft)
+    
+def update_topology(layer, corr, number_of_links, soft=False):
+    adj = torch.zeros_like(torch.Tensor(corr))
+    corr_flatten = torch.abs(torch.Tensor(corr).flatten())
+    if soft:
+        probabilities = corr_flatten / corr_flatten.sum()
+        sampled_flat_indices = torch.multinomial(probabilities, number_of_links, replacement=False)
+        adj = adj.reshape(-1)
+        adj[sampled_flat_indices] = 1
+        adj = adj.reshape(corr.shape[0], corr.shape[1])
+    else:
+        threshold = torch.abs(torch.sort(-torch.abs(corr_flatten))[0][number_of_links-1])
+        corr = torch.Tensor(corr)
+        adj[torch.abs(corr)>=threshold]=1
+        adj[torch.abs(corr)<threshold]=0
+
+    layer.weight_mask = adj.to(layer.device)
+
+
+def create_self_correlated_scheduler(model, corr, dim):
     isnan = np.isnan(corr)
     corr[isnan] = 0
     for i in range(corr.shape[0]):
@@ -252,14 +410,15 @@ def create_self_correlated_sparse(model, corr, dim):
                 update_topology(model.sparse_layers[i], first_layer, number_of_links)
             else:
                 update_topology(model.sparse_layers[i], expanded_dimension, number_of_links)
-    
-def update_topology(layer, corr, number_of_links):
+
+def update_topology_scheduler(w, corr, number_of_links):
     adj = torch.zeros_like(torch.Tensor(corr))
     corr_flatten = torch.abs(torch.Tensor(corr).flatten())
     
-    threshold = torch.abs(torch.sort(-torch.abs(corr_flatten))[0][number_of_links-1])
+    threshold = torch.abs(torch.sort(-torch.abs(corr_flatten))[0][number_of_links])
     corr = torch.Tensor(corr)
     adj[torch.abs(corr)>=threshold]=1
     adj[torch.abs(corr)<threshold]=0
-
-    layer.weight_mask = adj.to(layer.device)
+    # print(number_of_links)
+    # print(torch.sum(adj))
+    return adj.to(w.device)

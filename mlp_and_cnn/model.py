@@ -98,6 +98,7 @@ class dense_mlp(nn.Module):
         self.dropout = nn.Dropout(p=args.dropout)
 
     def forward(self, x):
+        # print("Sparsity of weight: ", torch.sum(self.Linear2.weight!=0)/torch.numel(self.Linear2.weight))
         batch_size = x.shape[0]
         out = self.dropout(self.relu(self.Linear1(x.reshape(batch_size, -1))))
         out = self.dropout(self.relu(self.Linear2(out)))

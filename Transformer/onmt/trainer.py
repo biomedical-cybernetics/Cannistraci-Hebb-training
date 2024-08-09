@@ -15,9 +15,10 @@ import traceback
 
 import onmt.utils
 from onmt.utils.logging import logger
-from sparse import sparse_layer
 from collections import defaultdict
-
+import os
+import scipy
+import numpy as np
 def build_trainer(opt, device_id, model, fields, optim, model_saver=None, pruner=None):
     """
     Simplify `Trainer` creation based on user `opt`s*
@@ -167,23 +168,6 @@ class Trainer(object):
                 assert self.trunc_size == 0, \
                     """To enable accumulated gradients,
                        you must disable target sequence truncating."""
-        if self.opt.chain_removal:
-            self.qk_chain_list = []
-            self.chain_list = []
-
-            for layer in model.encoder.transformer:
-                self.qk_chain_list.append([layer.self_attn.linear_query, layer.self_attn.linear_keys])
-                self.chain_list.append([layer.self_attn.linear_values, layer.self_attn.final_linear])
-                self.chain_list.append([layer.feed_forward.w_1, layer.feed_forward.w_2])
-
-            for layer in model.decoder.transformer_layers:
-                self.qk_chain_list.append([layer.self_attn.linear_query, layer.self_attn.linear_keys])
-                self.chain_list.append([layer.self_attn.linear_values, layer.self_attn.final_linear])
-
-                self.qk_chain_list.append([layer.context_attn.linear_query, layer.context_attn.linear_keys])
-                self.chain_list.append([layer.context_attn.linear_values, layer.context_attn.final_linear])
-
-                self.chain_list.append([layer.feed_forward.w_1, layer.feed_forward.w_2])
         # Set model in training mode.
         self.model.train()
 
@@ -290,10 +274,6 @@ class Trainer(object):
             self._gradient_accumulation(
                 batches, normalization, total_stats,
                 report_stats)
-            for n, m in self.model.named_modules():
-                if isinstance(m, sparse_layer):
-                    if m.regrow_method == "gradient":
-                        m.core_grad = m.weight_core.grad
             
 
             
@@ -327,30 +307,44 @@ class Trainer(object):
                     if self.earlystopper.has_stopped():
                         break
                 
-                if min_acc < valid_stats.accuracy():
-                    min_acc = valid_stats.accuracy()
-                    self.model_saver.save(0, moving_average=self.moving_average, no_removal=True)
+                if self.opt.EM_S and self.pruner.step < self.pruner.T_end:
+                    pass
+                else:
+
+                    if min_acc < valid_stats.accuracy():
+                        min_acc = valid_stats.accuracy()
+                        self.model_saver.save(0, moving_average=self.moving_average, no_removal=True)
+                        if self.opt.itop:
+                            avg_itop_rate = 0.0
+                            for l in range(len(self.pruner.record_mask)):
+                                avg_itop_rate += ((torch.sum(self.pruner.record_mask[l]) / self.pruner.record_mask[l].numel()) / len(self.pruner.record_mask))
+                            # print(avg_itop_rate)
+                            scipy.io.savemat(f"itop/itop_rate_{self.opt.seed}_{self.opt.regrow_method}_{self.opt.remove_method}_{self.opt.ws_beta}_{self.opt.sparsity}_{self.opt.batch_size}_{self.opt.update_interval}.mat", {"itop_rate": avg_itop_rate.item()}, {"step": step})
+                        # exit()
                 
 
-
-
-            if (self.model_saver is not None
-                and (save_checkpoint_steps != 0
-                    and step % save_checkpoint_steps == 0)):
-                self.model_saver.save(step, moving_average=self.moving_average)
+            if self.opt.EM_S and self.pruner.step < self.pruner.T_end:
+                pass
+            else:
+                if (self.model_saver is not None
+                    and (save_checkpoint_steps != 0
+                        and step % save_checkpoint_steps == 0)):
+                    self.model_saver.save(step, moving_average=self.moving_average)
 
             
 
             if train_steps > 0 and step >= train_steps:
                 break
             
-            if self.opt.rigl_scheduler:
+            if self.opt.dst_scheduler:
                 self.pruner()
-
-
-
+            
         if self.model_saver is not None:
             self.model_saver.save(step, moving_average=self.moving_average)
+        
+        if self.opt.fast_eval:
+            pass
+        
         return total_stats
 
     def validate(self, valid_iter, moving_average=None):
@@ -374,6 +368,9 @@ class Trainer(object):
 
         # Set model in validating mode.
         valid_model.eval()
+
+        # Need to add the validation of the sparsity of the model
+        
 
         with torch.no_grad():
             stats = onmt.utils.Statistics()
@@ -487,16 +484,6 @@ class Trainer(object):
                 if self.model.decoder.state is not None:
                     self.model.decoder.detach_state()
 
-        def gradient_debug():
-            grads = [[n, p.grad.data.norm().cpu().numpy()] for n, p in self.model.named_parameters()
-                     if p.requires_grad and p.grad is not None]
-            # from pprint import pprint as pp
-            # pp(grads)
-            with open("./gradient.txt", 'w') as f:
-                for n, norm in grads:
-                    f.write(n + '\t' + str(norm) + '\n')
-            exit()
-
         # in case of multi step gradient accumulation,
         # update only after accum batches
         if self.accum_count > 1:
@@ -560,36 +547,3 @@ class Trainer(object):
         if self.source_noise is not None:
             return self.source_noise(batch)
         return batch
-
-
-def qk_chain_removal(q, k):
-    q.mask_after_removal = remove_unactive_links_backward(q.mask_after_removal, k.mask_after_removal.transpose(1, 0))
-    k.mask_after_removal = remove_unactive_links_backward(k.mask_after_removal, q.mask_after_removal.transpose(1, 0))
-    print(f"q and k output neurons: {torch.sum(torch.sum(q.mask_after_removal, dim=0)>0)}, {torch.sum(torch.sum(k.mask_after_removal, dim=0)>0)}")
-
-
-def remove_unactive_links_backward(current_adj, after_adj):
-    outdegree = torch.sum(after_adj, dim=1)
-    outdegree[outdegree>0] = 1
-    current_num = torch.sum(current_adj)
-    current_adj = current_adj * outdegree
-
-    print("Number of removed unactive links backwards: ", int(current_num - torch.sum(current_adj)))
-
-    return current_adj
-
-def remove_unactive_links_forward(current_adj, before_adj):
-    indegree = torch.sum(before_adj, dim=0)
-    indegree[indegree>0] = 1
-    current_num = torch.sum(current_adj)
-    current_adj = current_adj * indegree.reshape(-1, 1)
-
-    print("Number of removed unactive links forwards: ", int(current_num - torch.sum(current_adj)))
-    return current_adj
-
-def chain_removal(layers):
-    for i in reversed(range(len(layers)-1)):
-        layers[i].mask_after_removal = remove_unactive_links_backward(layers[i].mask_after_removal, layers[i+1].mask_after_removal)
-
-    for i in range(1, len(layers)):
-        layers[i].mask_after_removal = remove_unactive_links_forward(layers[i].mask_after_removal, layers[i-1].mask_after_removal)

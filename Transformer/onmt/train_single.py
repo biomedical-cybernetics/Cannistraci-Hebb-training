@@ -13,7 +13,7 @@ from onmt.trainer import build_trainer
 from onmt.models import build_model_saver
 from onmt.utils.logging import init_logger, logger
 from onmt.utils.parse import ArgumentParser
-from rigl_scheduler import RigLScheduler
+from dst_scheduler import DSTScheduler
 
 
 def _check_save_model_path(opt):
@@ -47,20 +47,19 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     init_logger(opt.log_file)
     assert len(opt.accum_count) == len(opt.accum_steps), \
         'Number of accum_count values must match number of accum_steps'
-    opt.save_model = f"model/{opt.task}/{opt.rnn_size}/{opt.transformer_ff}/{opt.encoder_type}_{opt.sparsity}_{opt.decay_method}_{opt.regrow_method}_{opt.remove_method}_{opt.init_mode}_{opt.batch_size}_{opt.warmup_steps}_{opt.learning_rate}_{opt.update_interval}_{opt.T_decay}"
+    opt.save_model = f"model/{opt.task}/{opt.rnn_size}/{opt.transformer_ff}/{opt.seed}_{opt.sparsity}_{opt.decay_method}_{opt.regrow_method}_{opt.remove_method}_{opt.init_mode}_{opt.batch_size}_{opt.warmup_steps}_{opt.learning_rate}_{opt.update_interval}_{opt.T_decay}"
     
 
     if opt.WS:
         opt.save_model += f"_WS_{opt.ws_beta}"
-    if opt.clear_buffer:
-        opt.save_model += f"_cb"
 
     if opt.adaptive_zeta:
         opt.save_model += f"_az"
-    if opt.sst:
-        opt.save_model += f"_sst_{opt.sst}"
-    if opt.rigl_scheduler:
-        opt.save_model += "_rigl_scheduler"
+    if opt.EM_S:
+        opt.save_model += f"_EM_S"
+
+    if opt.dst_scheduler:
+        opt.save_model += "_dst_scheduler"
         
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
@@ -113,12 +112,15 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     optim = Optimizer.from_opt(model, model_opt, opt, checkpoint=checkpoint)
 
 
-    if model_opt.rigl_scheduler:
-        if model_opt.adaptive_zeta:
+    if model_opt.dst_scheduler:
+        if model_opt.adaptive_zeta and model_opt.EM_S:
+            raise ValueError("Adaptive zeta and EM_S cannot be used together")
+
+        if model_opt.adaptive_zeta or model_opt.EM_S:
             T_end = model_opt.train_steps * 0.75
         else:
             T_end = model_opt.train_steps
-        pruner = RigLScheduler(model, optim, dense_allocation=1-model_opt.sparsity, alpha=model_opt.zeta, delta=model_opt.update_interval, static_topo=False, T_end=T_end, ignore_linear_layers=False, grad_accumulation_n=1, args=model_opt)
+        pruner = DSTScheduler(model, optim, dense_allocation=1-model_opt.sparsity, alpha=model_opt.zeta, delta=model_opt.update_interval, static_topo=False, T_end=T_end, ignore_linear_layers=False, grad_accumulation_n=1, args=model_opt)
 
     # from onmt.encoders.sparse import sparse_layer
     # for module in model.modules():
@@ -130,7 +132,7 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     # Build model saver
     model_saver = build_model_saver(model_opt, opt, model, fields, optim)
 
-    if model_opt.rigl_scheduler:
+    if model_opt.dst_scheduler:
         trainer = build_trainer(
         opt, device_id, model, fields, optim, model_saver=model_saver, pruner=pruner)
     else:

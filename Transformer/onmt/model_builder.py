@@ -20,11 +20,6 @@ from onmt.utils.logging import logger
 from onmt.utils.parse import ArgumentParser
 from onmt.utils.utils import *
 
-from sparse import sparse_layer
-from sparse_topology_initialization import create_ws_sparse
-
-from rigl_scheduler import RigLScheduler
-
 def build_embeddings(opt, text_field, for_encoder=True):
     """
     Args:
@@ -98,6 +93,7 @@ def build_decoder(opt, embeddings, save_path=None, device=None):
 def load_test_model(opt, model_path=None):
     if model_path is None:
         model_path = opt.models[0]
+    print(model_path)
     checkpoint = torch.load(model_path,
                             map_location=lambda storage, loc: storage)
 
@@ -186,12 +182,6 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
 
     # Build NMTModel(= encoder + decoder).
     model = onmt.models.NMTModel(encoder, decoder)
-    # Collect sparse layers
-
-    if model_opt.WS:
-        for n, m in model.named_modules():
-            if isinstance(m, sparse_layer):
-                create_ws_sparse(m, model_opt)
     
 
     # Build Generator.

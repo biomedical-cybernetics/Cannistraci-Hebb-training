@@ -13,6 +13,8 @@ import random
 import wandb
 from sparse_topology_initialization import create_sparse_topological_initialization
 from torch.optim.lr_scheduler import _LRScheduler
+from dst_scheduler import DSTScheduler
+import math
 
 class WarmUpLR(_LRScheduler):
     """warmup_training learning rate scheduler
@@ -76,93 +78,90 @@ def args():
     
     
     # sparse training arguments
-    parser.add_argument("--epsilon", type=float, default=0.0, help="give the sparsity to each layer by ER")
+    # parser.add_argument("--epsilon", type=float, default=0.0, help="give the sparsity to each layer by ER")
     parser.add_argument("--sparsity", type=float, default=0.99, help="directly give the sparsity to each layer")
     parser.add_argument("--update_interval", type=int, default=1, help="the number of intervals for topology evolution")
     parser.add_argument("--zeta", type=float, default=0.3, help="the fraction of removal and regrown links")
     parser.add_argument("--adaptive_zeta", action="store_true", help="add this augment to make the zeta reducing across the epochs")
     parser.add_argument("--remove_method", type=str, default="weight_magnitude", help="how to remove links, Magnitude or MEST")
     parser.add_argument("--regrow_method", type=str, default="random", help="how to regrow new links. "
-                                                                            "Including: random, gradient, CH3_L3_nosubrank")
+                                                                            "Including: random, gradient, CH3_L3p_soft, CH3_L3n_soft, CH2_L3n_soft")
     parser.add_argument("--init_mode", type=str, default="kaiming", help="how to initialize the weights of the model."
-                                                                         "Including: kaiming, xavier, gaussian, swi")
-    parser.add_argument("--update_mode", type=str, default="zero", help="how to initialize the weights of the new grown links."
-                                                                           "Including: kaiming, xavier, gaussian, zero, original, swi")
+                                                                         "Including: kaiming, swi")
     parser.add_argument("--chain_removal", action="store_true", help="use forward removal and backward removal")
-    parser.add_argument("--early_stop", action="store_true")
-    parser.add_argument("--print_network", action="store_true", help="save the adjacency matrix of each sandwich layer after each evolutionary epoch")
     parser.add_argument("--self_correlated_sparse", action="store_true")
-    parser.add_argument("--calib_samples", type=int, default=256)
     parser.add_argument("--dim", type=int, default=1)
     parser.add_argument("--dimension", type=int, default=0)
-    parser.add_argument("--early_stop_threshold", type=float, default="0.9")
-    parser.add_argument("--bias", action="store_true")
     parser.add_argument("--WS", action="store_true")
-    parser.add_argument("--BA", action="store_true")
-    parser.add_argument("--beta", type=float, default=1.0)
+    # parser.add_argument("--BA", action="store_true")
+    parser.add_argument("--ws_beta", type=float, default=1.0)
     parser.add_argument("--no_log", action="store_true")
     parser.add_argument("--linearlr", action="store_true")
     parser.add_argument('--milestone', type=int, nargs='+', default=[60, 120, 160],
                         help='Decrease learning rate at these epochs.')
     parser.add_argument("--warmup", action="store_true")
     parser.add_argument("--discretelr", action="store_true")
-    parser.add_argument("--reset_parameters", action="store_true")
     parser.add_argument("--end_factor", type=float, default=0.01)
-    parser.add_argument("--T_decay", type=str, default="no_decay", choices=["no_decay", "linear"])
-    parser.add_argument("--decay_factor", type=float, default=0.9)
-    parser.add_argument("--clear_buffer", action="store_true")
-    parser.add_argument("--old_version", action="store_true", help="use the old version of the sparse model")
-
+    parser.add_argument("--T_decay", type=str, default="no_decay", choices=["no_decay", "linear"], help="decay the temperature of the sampling")
+    parser.add_argument("--decay_factor", type=float, default=0.9, help="decay epochs of the learning rate")
+    parser.add_argument("--dst_scheduler",action="store_true", help="use the dst scheduler")
+    parser.add_argument("--itop", action="store_true", help="use the itop logger")
+    parser.add_argument("--EM_S", action="store_true")
+    parser.add_argument("--early_stop", action="store_true")
+    parser.add_argument("--early_stop_thre", type=float, default=0.9)
+    parser.add_argument("--record_anp", action="store_true")
+    parser.add_argument("--method", type=str, default="", help="the method name of the experiment")
     
     return parser.parse_args()
 
 
 def train_model(seed, device, args):
     setup_seed(seed)
-
-    
     print(args)
-    
-    # For computing the adaptive_zeta, the cosine strategy of RigL
-    Tend = args.epochs//args.update_interval
     
     save_path_parts = [
         args.network_structure,
         args.dataset,
         f"s_{seed}_lr_{args.learning_rate}_e_{args.epochs}",
-        f"s_{args.sparsity}_i_{args.update_interval}_az_{args.adaptive_zeta}_z_{args.zeta}_im_{args.init_mode}_um_{args.update_mode}_df_{args.decay_factor}",
+        f"s_{args.sparsity}_i_{args.update_interval}_z_{args.zeta}_df_{args.decay_factor}",
     ]
-    
-    # Adding conditional parts
-    if args.old_version:
-        save_path_parts.append("old_")
+    if not args.method:
+        if args.adaptive_zeta:
+            save_path_parts.append("az_")
+        if args.init_mode == "swi":
+            save_path_parts.append("swi_")
 
-    if args.self_correlated_sparse:
-        save_path_parts.append("scs_")
+        if args.self_correlated_sparse:
+            save_path_parts.append("scs_")
 
-    if args.BA:
-        save_path_parts.append("ba_")
+        if args.WS:
+            save_path_parts.append(f"ws_beta_{args.ws_beta}_")
 
-    if args.WS:
-        save_path_parts.append(f"ws_beta_{args.beta}")
+        if args.chain_removal:
+            save_path_parts.append("chain_")
 
-    if args.chain_removal:
-        save_path_parts.append("chain_")
-
-    if args.early_stop:
-        save_path_parts.append("es_")
-    
-    if args.remove_method.split("_")[-1] == "soft":
-        save_path_parts.append(f"{args.T_decay}_")
+        if args.early_stop:
+            save_path_parts.append("es_")
+        
+        if args.remove_method.split("_")[-1] == "soft":
+            save_path_parts.append(f"{args.T_decay}_")
     
         
-    # Adding fixed parts
-    save_path_parts.append(f"d_{args.dim}_")
+        # Adding fixed parts
+        save_path_parts.append(f"d_{args.dim}_")
 
-    save_path_parts.append(f"{args.regrow_method}_{args.remove_method}")
+        save_path_parts.append(f"{args.regrow_method}_{args.remove_method}")
 
-    # Joining all parts together to form the save path
-    save_path = "/".join(save_path_parts) + "/"
+        # Joining all parts together to form the save path
+        save_path = "/".join(save_path_parts) + "/"
+    else:
+        if args.self_correlated_sparse:
+            save_path_parts.append("scs_")
+        if args.WS:
+            save_path_parts.append(f"ws_beta_{args.ws_beta}_")
+        if args.EM_S:
+            save_path_parts.append("EM_S_")
+        save_path = "/".join(save_path_parts) +  f"/{args.method}_{args.regrow_method}_{args.remove_method}/"
 
     print("Save path is:", save_path)
     
@@ -186,78 +185,43 @@ def train_model(seed, device, args):
     
     if args.network_structure == "mlp":
         train_loader, test_loader, indim, outdim, hiddim = load_data_mlp(args)
-        if args.regrow_method == "fc":
-            model = dense_mlp(indim, hiddim, outdim, args).to(device)
-        else:
-            model = sparse_mlp(indim, hiddim, outdim, save_path, Tend, device, args).to(device)
-            filename = "self-correlated_sparse/{0}".format(args.dataset)
-        
-            create_sparse_topological_initialization(args, model, filename=filename)
-    
-    elif args.network_structure == "googlenet":
-        train_loader, test_loader, outdim = load_data_cnn(args)
-        indim = 1024
-        if args.dimension:
-            hiddim = args.dimension
-        else:
-            hiddim = indim * args.dim
-        
-        if args.regrow_method == "fc":
-            model = Dense_GoogleNet(indim, hiddim, outdim).to(device)
-        else:
-            model = Sparse_GoogleNet(indim, hiddim, outdim, save_path, Tend, device, args).to(device)
-            create_sparse_topological_initialization(args, model)
-            
-    elif args.network_structure == "resnet152":
-        train_loader, test_loader, outdim = load_data_cnn(args)
-        
-        if args.regrow_method == "fc":
-            model = Dense_ResNet152(args, outdim).to(device)
-        else:
-            model = Sparse_ResNet152(outdim, save_path, Tend, device, args).to(device)
-            create_sparse_topological_initialization(args, model)
-    
-    if args.reset_parameters:
-        for layer in model.sparse_layers:
-            layer.reset_parameters()
-    # print(model)
+
+        model = dense_mlp(indim, hiddim, outdim, args).to(device)
+
+    if args.adaptive_zeta or args.EM_S:
+        T_end = args.epochs * 0.75
+    else:
+        T_end = args.epochs
+        # print(model)
 
     # optimizer
     optimizer = optim.SGD(model.parameters(), lr = args.learning_rate, momentum = 0.9, weight_decay=args.weight_decay)
     if args.linearlr:
         train_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=args.end_factor, total_iters=int(args.epochs * args.decay_factor))
     elif args.discretelr:
-         train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestone, gamma=0.2) #learning rate decay
+        train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestone, gamma=0.2) #learning rate decay
         
     if args.warmup:
         iter_per_epoch = len(train_loader)
         warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch)
     else:
         warmup_scheduler = None
-    
-    
-    if args.network_structure in ["mlp", "googlenet", "resnet152"] and args.regrow_method != "fc":
-        for layer in model.sparse_layers:
-            layer.optimizer = optimizer
 
-        
+    if args.dst_scheduler:
+        pruner = DSTScheduler(model, optimizer, dense_allocation=1-args.sparsity, alpha=args.zeta, delta=args.update_interval * len(train_loader), static_topo=False, T_end=T_end* len(train_loader), ignore_linear_layers=False, grad_accumulation_n=1, args=args)
+    else:
+        pruner = None
     m = metrics()
-
+  
+    itop_rates = []
+    anp_rates = []
     for epoch in range(args.epochs):
-        if epoch == 0 or args.regrow_method in ["fixed", "fc"]: 
-            pass
-        else:
-            if epoch % args.update_interval == 0:
-                print(args)
-                t1 = time.time()
-                model.evolve_connections()
-                t2 = time.time()
-                print(f'evolution time of {args.regrow_method} is: {round(t2 - t1, 2)}s')
-
-        Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler)
+        anp_rate = 1.0
+        itop_rate = 0.0
+        Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler, pruner)
         top1, top5, test_loss= Test(model, device, test_loader)
         m.update(test_loss, top1, top5)
-        wandb.log({"test_accuracy": top1, "test_loss": test_loss})
+        
         
 
         # print(optimizer.param_groups[0]['lr'])
@@ -269,8 +233,30 @@ def train_model(seed, device, args):
             current_lr = param_group['lr']
             print("Current learning rate is:", current_lr)
         
+
+        if args.itop:
+            for l in range(len(pruner.record_mask)):
+                itop_rate += (torch.sum(pruner.record_mask[l]) / pruner.record_mask[l].numel())/len(pruner.record_mask)
+            itop_rates.append(itop_rate.item())
+
+        if args.record_anp:
+            # record the active neuron post-training rate
+            active_neurons = 0
+            total_neurons = 0
+            for l, mask in enumerate(pruner.backward_masks):
+                active_neurons += torch.sum(torch.sum(mask, dim=0) > 0)
+                total_neurons += mask.shape[1]
+
+            active_neurons += torch.sum(torch.sum(mask, dim=1) > 0)
+            total_neurons += mask.shape[0]
+            anp_rate = active_neurons / total_neurons
+            anp_rates.append(anp_rate.item())
+            print("Active neurons percentage is:", anp_rate.item())
+
+        
+        wandb.log({"test_accuracy": top1, "test_loss": test_loss, "itop_rate": itop_rate, "anp_rate": anp_rate})
     # save model
-    savemat(save_path + "res.mat", {'top1':m.top1, 'top5':m.top5, 'loss':m.loss})
+    savemat(save_path + "res.mat", {'top1':m.top1, 'top5':m.top5, 'loss':m.loss, "itop_rate": itop_rates, "anp_rate": anp_rates})
 
 
 

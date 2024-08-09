@@ -232,31 +232,26 @@ def model_opts(parser):
 
 def cht_opts(parser):
      group = parser.add_argument_group('cht')
-     group.add_argument("--rigl_scheduler", action="store_true")
+     group.add_argument("--dst_scheduler", action="store_true", help="use the dynamic sparse training")
      group.add_argument("--iterative_warmup_steps", type=int, default=0)
      group.add_argument("--update_interval", type=int, default=1)
      group.add_argument("--sparsity", type=float, default=0.99, help="directly give the sparsity to each layer")
      group.add_argument("--zeta", type=float, default=0.3, help="the fraction of removal and regrown links")
-     group.add_argument("--remove_method", type=str, default="weight_magnitude", help="how to remove links, Magnitude or MEST")
+     group.add_argument("--remove_method", type=str, default="weight_magnitude", help="how to remove links, weight_magnitude, weight_magnitude_soft, or mix_weight_gradient")
      parser.add_argument("--regrow_method", type=str, default="random", help="how to regrow new links. "
-                                                                                "Including: random, gradient, CH3_L3, CH3_L3_soft")
-     parser.add_argument("--init_mode", type=str, default="kaiming", help="how to initialize the weights of the model."
-                                                                           "Including: kaiming, xavier, gaussian, swi")
-     parser.add_argument("--update_mode", type=str, default="zero", help="how to initialize the weights of the new grown links."
-                                                                           "Including: kaiming, xavier, gaussian, zero, original, swi")
+                                                                                "Including: random, gradient, CH3_L3p_soft, CH3_L3n_soft, CH2_L3n_soft")
+     parser.add_argument("--init_mode", type=str, default="xavier", help="how to initialize the weights of the model."
+                                                                           "Including: xavier, swi")
      parser.add_argument("--chain_removal", action="store_true", help="use forward removal and backward removal")
      parser.add_argument("--print_network", action="store_true", help="save the adjacency matrix of each sandwich layer after each evolutionary epoch")
-     parser.add_argument("--bias", action="store_true")
-     parser.add_argument("--qk_chain_removal", action="store_true")
-     parser.add_argument("--vo_chain_removal", action="store_true")
      parser.add_argument("--T_decay", default="no_decay", type=str)
      parser.add_argument("--adaptive_zeta", action="store_true")
      parser.add_argument("--WS", action="store_true")
      parser.add_argument("--ws_beta", default=0.25, type=float)
-     parser.add_argument("--powerlaw_thre", default=5, type=float)
      parser.add_argument("--early_stop", action="store_true")
-     parser.add_argument("--clear_buffer", action="store_true")
-     parser.add_argument("--sst", type=int, default=0)
+     parser.add_argument("--itop", action="store_true", help="activate ITOP analysis")
+     parser.add_argument("--EM_S", action="store_true", help="EM_S solution")
+
 
 def preprocess_opts(parser):
     """ Pre-procesing options """
@@ -449,6 +444,7 @@ def train_opts(parser):
     group.add('--seed', '-seed', type=int, default=42,
               help="Random seed used for the experiments "
                    "reproducibility.")
+    group.add('--fast_eval', action='store_true',help="evaluation just after the training")
 
     # Init options
     group = parser.add_argument_group('Initialization')

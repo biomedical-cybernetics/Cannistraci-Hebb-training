@@ -23,22 +23,29 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler):
+def Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler, pruner):
     model.train()
     CSE = nn.CrossEntropyLoss().to(device)
+    # print(model)
     for batch_idx, (data, target) in tqdm(enumerate(train_loader), total=len(train_loader), leave=False):
+        
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
         loss = CSE(output, target)
         loss.backward()
-        if "gradient" in args.regrow_method:
-            for layer in model.sparse_layers:
-                layer.core_grad = layer.weight_core.grad
-        optimizer.step()
+        if args.dst_scheduler:
+            if pruner():
+                optimizer.step()
+        else:
+            optimizer.step()
+
+        
         if args.warmup and epoch < 1:
             warmup_scheduler.step()
-        # print(torch.mean(model.sparse_layers[2].weight.data))
+
+
+        
         
 
     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tLr: {:.4f}'.format(
@@ -55,6 +62,9 @@ def Test(model, device, val_loader):
     model.eval()
     criterion = nn.CrossEntropyLoss().to(device)
     end = time.time()
+    for l, m in model.named_modules():
+        if isinstance(m, nn.Linear):
+            print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
     for i, (input, target) in enumerate(val_loader):
         target = target.to(device)
         input = input.to(device)

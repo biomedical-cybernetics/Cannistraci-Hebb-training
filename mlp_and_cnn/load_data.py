@@ -1,8 +1,21 @@
 from torchvision import datasets, transforms
 import torch
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
 
 
-
+class CustomDataset(Dataset):
+    def __init__(self, df, target_column):
+        self.labels = torch.tensor(df[target_column].values, dtype=torch.int64)
+        self.features = torch.tensor(df.drop(target_column, axis=1).values, dtype=torch.float32)
+        
+    def __len__(self):
+        return len(self.labels)
+    
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
 
 def load_data_mlp(args):
     if args.dataset == 'EMNIST':
@@ -83,6 +96,25 @@ def load_data_mlp(args):
             shuffle=True)
         indim = 784
         outdim = 10
+    
+    elif args.dataset == "HIGGS":
+        csv_file = "./data/HIGGS.csv"
+        column_names = ["outcome"] + ["feature "+str(i) for i in range(1,29)]
+        df = pd.read_csv(csv_file, header=None, names=column_names)
+        df = df.apply(pd.to_numeric, errors='coerce')
+        df = df.dropna()
+        X_df = df.iloc[:, 1:]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X_df)
+        df = pd.DataFrame(np.concatenate([df.iloc[:, :1].values, X_scaled], axis=1), columns=['outcome'] + list(df.columns[1:]))
+        train_df, test_df = np.split(df.sample(frac=1, random_state=42), [int(0.8*len(df))])
+        train_dataset = CustomDataset(train_df, "outcome")
+        test_dataset = CustomDataset(test_df, "outcome")
+
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+        indim = 28
+        outdim = 2
         
     if args.dimension:
         dimension = args.dimension
