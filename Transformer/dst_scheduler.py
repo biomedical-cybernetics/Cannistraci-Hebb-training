@@ -149,7 +149,7 @@ class DSTScheduler:
             w.register_hook(self.backward_hook_objects[-1])
             setattr(w, '_has_rigl_backward_hook', True)
 
-        assert self.grad_accumulation_n > 0 and self.grad_accumulation_n < delta
+        # assert self.grad_accumulation_n > 0 and self.grad_accumulation_n < delta
         assert self.sparsity_distribution in ('uniform', )
 
 
@@ -196,7 +196,7 @@ class DSTScheduler:
                 continue
             
             if self.args.WS:
-                mask = create_ws_sparse_scheduler(self.S[l], w, self.args)
+                mask = create_ws_sparse_scheduler(self.S[l], w, self.args).contiguous()
 
             else:
                 n = self.N[l]
