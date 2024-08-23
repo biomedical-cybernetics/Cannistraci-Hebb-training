@@ -93,6 +93,7 @@ class DSTScheduler:
 
         
 
+
         # modify optimizer.step() function to call "reset_momentum" after
         _create_step_wrapper(self, optimizer)
             
@@ -136,12 +137,15 @@ class DSTScheduler:
 
         # also, register backward hook so sparse elements cannot be recovered during normal training
         self.backward_hook_objects = []
+        self.history_weights = []
         for i, w in enumerate(self.W):
+            
             # if sparsity is 0%, skip
             if self.S[i] <= 0:
                 self.backward_hook_objects.append(None)
                 continue
-
+            if args.history_weights:
+                self.history_weights.append(w.data.clone().cpu())
             if getattr(w, '_has_rigl_backward_hook', False):
                 print(i, w.shape)
                 # print()
@@ -150,6 +154,8 @@ class DSTScheduler:
             self.backward_hook_objects.append(IndexMaskHook(i, self))
             w.register_hook(self.backward_hook_objects[-1])
             setattr(w, '_has_rigl_backward_hook', True)
+
+        
 
         assert self.grad_accumulation_n > 0 and self.grad_accumulation_n < delta
         assert self.sparsity_distribution in ('uniform', )
@@ -374,6 +380,7 @@ class DSTScheduler:
         is_dist = dist.is_initialized()
         world_size = dist.get_world_size() if is_dist else None
 
+
         if self.args.chain_removal:
             # If use chain_removal, has to divide the evolution of the mask into two steps
             # only for chts: CH2_L3_soft, CH3_L3n_soft, CH3_L3p_soft
@@ -389,9 +396,13 @@ class DSTScheduler:
                 
                 if self.S[l] <= 0:
                     continue
+                
+                
 
                 current_mask = self.backward_masks[l]
 
+                if self.args.history_weights:
+                    self.history_weights[l][current_mask] = w[current_mask].data.cpu()
                 # calculate drop/grow quantities
                 n_total = self.N[l]
                 n_ones.append(torch.sum(current_mask).item())
@@ -627,18 +638,23 @@ class DSTScheduler:
                 
 
                 mask2_reshaped = torch.reshape(mask2, current_mask.shape)
-                grow_tensor = torch.zeros_like(w)
+                
                 
 
                 if self.args.early_stop:
                     print("Overlap rate: ", (torch.sum((mask2_reshaped == 1) & (current_mask.int() - mask1_total[l])) / n_prune[l]).item())
                     if (torch.sum((mask2_reshaped == 1) & (current_mask.int() - mask1_total[l])) / n_prune[l]) > self.args.early_stop_thre:
                         self.early_stop_signal[l] = 1 
+                if self.args.history_weights:
+                    grow_tensor = self.history_weights[l].to(w.device)
+                    new_connections = mask2_reshaped.bool()
+                    new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
+                else:
+                    grow_tensor = torch.zeros_like(w)
+                    new_connections = ((mask2_reshaped == 1) & (current_mask == 0))
 
-                new_connections = ((mask2_reshaped == 1) & (current_mask == 0))
-
-                # update new weights to be initialized as zeros and update the weight tensors
-                new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
+                    # update new weights to be initialized as zeros and update the weight tensors
+                    new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
                 w.data = new_weights
 
                 mask_combined = (mask1_total[l] + mask2_reshaped).bool()
@@ -648,6 +664,7 @@ class DSTScheduler:
 
                 # update the mask
                 current_mask.data = mask_combined
+                
 
                 self.reset_momentum()
                 self.apply_mask_to_weights()
@@ -759,13 +776,18 @@ class DSTScheduler:
                 
 
                 mask2_reshaped = torch.reshape(mask2, current_mask.shape)
-                grow_tensor = torch.zeros_like(w)
+                
                 
                 new_connections = ((mask2_reshaped == 1) & (current_mask == 0))
-
-                # update new weights to be initialized as zeros and update the weight tensors
-                new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
-                w.data = new_weights
+                if self.args.old_version:
+                    stdv = math.sqrt(2 / w.shape[1])
+                    grow_tensor = (torch.randn(w.shape[0], w.shape[1]) * stdv).to(w.device)
+                    new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
+                else:
+                    grow_tensor = torch.zeros_like(w)
+                    # update new weights to be initialized as zeros and update the weight tensors
+                    new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
+                    w.data = new_weights
 
                 mask_combined = torch.reshape(mask1 + mask2, current_mask.shape).bool()
 

@@ -387,6 +387,7 @@ class sparse_layer(nn.Module):
         if self.args.old_version:
             self.weight.data *= self.mask_after_removal
             self.weight.data += new_links_weight
+            # print("density is: ", torch.sum(self.weight.data!=0)/self.weight.data.numel())
         else:
             self.weight.data *= (self.mask_after_removal + (new_links_mask * self.weight_mask))
             self.weight.data += (new_links_weight * (self.weight_mask == 0))

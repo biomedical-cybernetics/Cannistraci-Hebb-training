@@ -111,6 +111,8 @@ def args():
     parser.add_argument("--early_stop_thre", type=float, default=0.9)
     parser.add_argument("--record_anp", action="store_true")
     parser.add_argument("--method", type=str, default="", help="the method name of the experiment")
+    parser.add_argument("--old_version", action="store_true")
+    parser.add_argument("--history_weights", action="store_true")
     
     return parser.parse_args()
 
@@ -182,7 +184,7 @@ def train_model(seed, device, args):
         mode="disabled" if args.no_log else "online",
     )
 
-    
+
     if args.network_structure == "mlp":
         train_loader, test_loader, indim, outdim, hiddim = load_data_mlp(args)
 
@@ -194,6 +196,8 @@ def train_model(seed, device, args):
         T_end = args.epochs
         # print(model)
 
+    if args.old_version:
+        T_end = args.epochs
     # optimizer
     optimizer = optim.SGD(model.parameters(), lr = args.learning_rate, momentum = 0.9, weight_decay=args.weight_decay)
     if args.linearlr:
@@ -257,7 +261,7 @@ def train_model(seed, device, args):
         wandb.log({"test_accuracy": top1, "test_loss": test_loss, "itop_rate": itop_rate, "anp_rate": anp_rate})
     # save model
     savemat(save_path + "res.mat", {'top1':m.top1, 'top5':m.top5, 'loss':m.loss, "itop_rate": itop_rates, "anp_rate": anp_rates})
-
+    torch.save(model.state_dict(), save_path + 'tmp_model.pth')
 
 
 

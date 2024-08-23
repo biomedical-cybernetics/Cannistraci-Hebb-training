@@ -2,7 +2,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import time
-
+from sparse import sparse_layer
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -23,7 +23,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler, pruner):
+def Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler, pruner=None):
     model.train()
     CSE = nn.CrossEntropyLoss().to(device)
     # print(model)
@@ -65,6 +65,12 @@ def Test(model, device, val_loader):
     for l, m in model.named_modules():
         if isinstance(m, nn.Linear):
             print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
+            print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight, dim=1) != 0), torch.sum(torch.sum(m.weight, dim=0) != 0)))
+        elif isinstance(m, sparse_layer):
+            # print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
+            # print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight, dim=1) != 0), torch.sum(torch.sum(m.weight, dim=0) != 0)))
+            print("density is: ", torch.sum(m.weight_mask!=0)/m.weight.data.numel())
+            print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight_mask, dim=1) != 0).item(), torch.sum(torch.sum(m.weight_mask, dim=0) != 0).item()))
     for i, (input, target) in enumerate(val_loader):
         target = target.to(device)
         input = input.to(device)
