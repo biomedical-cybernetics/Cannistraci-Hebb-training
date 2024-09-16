@@ -54,13 +54,13 @@ cd mlp_and_cnn
 #### CHTs on EMNIST-MLP task
 
 ```bash
-python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH2_L3_soft --init_mode swi --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 0 --dim 2 --update_interval 1 --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method ri --seed 0 --sparsity 0.99 --T_decay linear --dst_scheduler --adaptive_zeta
+python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH2_L3n_soft --init_mode swi --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 0 --dim 2 --update_interval 1 --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method ri --seed 0 --sparsity 0.99 --T_decay linear --dst_scheduler --adaptive_zeta
 ```
 
 #### CHTs on EMNIST-MLP task + EM_S
 
 ```bash
-python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH2_L3_soft --init_mode swi --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 0 --dim 2 --update_interval 1 --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method ri --seed 0 --sparsity 0.99 --T_decay linear --dst_scheduler --EM_S
+python run.py --batch_size 32 --dataset EMNIST --network_structure mlp --weight_decay 5e-04 --regrow_method CH2_L3n_soft --init_mode swi --linearlr --epochs 100 --learning_rate 0.025 --cuda_device 0 --dim 2 --update_interval 1 --self_correlated_sparse --no_log --chain_removal --zeta 0.3 --remove_method ri --seed 0 --sparsity 0.99 --T_decay linear --dst_scheduler --EM_S
 ```
 
 Note:
