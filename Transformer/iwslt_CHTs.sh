@@ -47,7 +47,6 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	--use_cht \
 	--update_interval 100 \
 	--sparsity 0.9 \
-	--init_mode swi \
-	--regrow_method CH3_L3_soft \
+	--regrow_method CH2_L3n_soft \
 	--chain_removal \
-	--bias --remove_method weight_magnitude_soft --T_decay linear --WS --ws_beta 0.25
+	--remove_method weight_magnitude_soft --T_decay linear --WS --ws_beta 0.25 --adaptive_zeta --dst_scheduler --no_log
