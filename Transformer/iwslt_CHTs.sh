@@ -22,8 +22,8 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	-attention_dropout $attdp \
 		-max_grad_norm $gn \
 		-optim adam \
-		-encoder_type chttransformer \
-		-decoder_type chttransformer \
+		-encoder_type transformer \
+		-decoder_type transformer \
 		-manifold Euclidean \
 		-position_encoding \
 		-param_init 0 \
