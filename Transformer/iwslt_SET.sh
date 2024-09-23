@@ -43,9 +43,7 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
 	-valid_steps 500 \
 	-master_port 1345 \
 	-keep_checkpoint 10 \
-	--use_cht \
 	--update_interval 100 \
 	--sparsity 0.9 \
-	--init_mode swi \
 	--regrow_method random \
-	--bias --remove_method weight_magnitude
+	--remove_method weight_magnitude --dst_scheduler --no_log
