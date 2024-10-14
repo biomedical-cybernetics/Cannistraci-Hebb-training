@@ -115,6 +115,44 @@ def load_data_mlp(args):
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
         indim = 28
         outdim = 2
+    
+    elif args.dataset == "CIFAR10":
+        train_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR10('./data', train=True, download=True,
+                            transform=transforms.Compose([
+                                transforms.RandomCrop(32, padding=4),
+                                transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor(),
+                                transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616])])),
+            batch_size=args.batch_size, shuffle=True)
+
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR10('./data', train=False, transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616])])),
+            batch_size=args.batch_size, shuffle=True)
+        indim = 3072
+        outdim = 10
+        
+        
+    elif args.dataset == "CIFAR100":
+        train_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100('./data', train=True, download=True,
+                            transform=transforms.Compose([
+                                transforms.RandomCrop(32, padding=4),
+                                transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor(),
+                                transforms.Normalize([0.5071, 0.4866, 0.4409], [0.2673, 0.2564, 0.2762])])),
+            batch_size=args.batch_size, shuffle=True)
+
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100('./data', train=False, transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize([0.5071, 0.4866, 0.4409], [0.2673, 0.2564, 0.2762])])),
+            batch_size=args.batch_size, shuffle=True)
+        indim = 3072
+        outdim = 100
+
         
     if args.dimension:
         dimension = args.dimension

@@ -1,16 +1,17 @@
-""" implementation of https://arxiv.org/abs/1911.11134 """
-
 import numpy as np
 import torch
 import torch.distributed as dist
-
+import os
 from dst_util import get_W
 from sparse_topology_initialization import create_ws_sparse_scheduler
 import math
 from scipy.sparse import csr_matrix
-import compute_scores
-from scipy.io import loadmat
+import sys
+sys.path.append("../")
+import CH_scores
+from scipy.io import loadmat, savemat
 from sparse_topology_initialization import update_topology_scheduler
+from torchvision import datasets, transforms
 
 def remove_unactive_links_backward(current_adj, after_adj):
     outdegree = torch.sum(after_adj, dim=0)
@@ -209,8 +210,21 @@ class DSTScheduler:
                 n = self.N[l]
                 number_of_links = int((1-self.S[l]) * n)
 
-                corr_filename = f"self-correlated_sparse/{self.args.dataset}/corr.mat"
-                corr = loadmat(corr_filename)["corr"]
+                corr_filename = f"self-correlated_sparse/{self.args.dataset}"
+                if os.path.exists(corr_filename + "/corr.mat"):
+                    corr = loadmat(corr_filename + "/corr.mat")["corr"]
+                else:
+                    dataloader, input_of_sparse_layer = load_calib_dataset(self.args, data_dir='./data')
+
+                    print("Using self correlated sparse of mlp!!!")
+                    
+                    for batch_idx, (data, _) in enumerate(dataloader):
+                        input_of_sparse_layer[:,batch_idx*self.args.batch_size:batch_idx*self.args.batch_size + data.shape[0]] = data.reshape(data.shape[0], -1).numpy().transpose(1, 0)
+                    corr = np.corrcoef(input_of_sparse_layer)
+                    os.makedirs(corr_filename)
+                    print("done")
+                    
+                    savemat(corr_filename + "/corr.mat", {"corr":corr})
 
                 isnan = np.isnan(corr)
                 corr[isnan] = 0
@@ -472,6 +486,8 @@ class DSTScheduler:
 
 
             
+            if self.args.regrow_method not in ["random", "gradient", "CH3_L3n_soft", "CH3_L3p_soft", "CH2_L3n_soft", "CH2_L3p_soft", "CH3.1_L3n_soft", "CH3.1_L3p_soft"]:
+                raise NotImplementedError
 
             for l, w in enumerate(self.W):
                 current_mask = self.backward_masks[l]
@@ -500,8 +516,9 @@ class DSTScheduler:
                 
 
                 # Link regrowth
-                if self.args.regrow_method == "CH3_L3n_soft":
-                    # CH3_L3 node-based soft regrowth
+                CH_method = self.args.regrow_method.split("_")[0]
+
+                if "L3n" in self.args.regrow_method:
                     
                     DTPATHS1 = mask1_total[l].clone().float()
                     
@@ -520,122 +537,83 @@ class DSTScheduler:
 
                     elcl_DT -= 1
                     elcl_TD -= 1
-
-                    elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
-                    elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
+                    if CH_method == "CH2":
+                        elcl_DT = 1 / (elcl_DT + 1) * DDPATHS2
+                        elcl_TD = 1 / (elcl_TD + 1) * TTPATHS2
+                    elif CH_method == "CH3":
+                        elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
+                        elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
+                    elif CH_method == "CH3.1":
+                        elcl_DT = 1 / (elcl_DT + 1/(DDPATHS2 + 1)) * BDDPATHS2
+                        elcl_TD = 1 / (elcl_TD + 1/(TTPATHS2 + 1)) * BTTPATHS2
+                    
 
                     elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
                     elcl_TD = torch.matmul(elcl_TD, TDPATHS1)
 
-                    score_matrix = elcl_DT + elcl_TD.T
-                    score_matrix = score_matrix * (mask1_total[l] == 0)
-                    thre = torch.sort(score_matrix.ravel())[0][-n_prune[l]]
-                    if thre == 0:
-                        print("Regrowing threshold is 0!!!")
-                        score_matrix = (score_matrix + 0.00001)*(mask1_total[l]==0)
-
-                    mask2 = torch.zeros_like(score_matrix.view(-1)).to(w.device)
-                    flat_matrix = score_matrix.flatten()
-                    probabilities = flat_matrix / flat_matrix.sum()
-
-                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
-                    mask2[sampled_flat_indices] = 1
-
-                elif self.args.regrow_method == "CH2_L3n_soft":
-                    # CH2_L3 node-based soft regrowth
-                    DTPATHS1 = mask1_total[l].clone().float()
-                    TDPATHS1 = DTPATHS1.transpose(1, 0)
-
-                    # get number of L2 paths
-                    DDPATHS2 = torch.matmul(DTPATHS1, TDPATHS1)
-                    TTPATHS2 = torch.matmul(TDPATHS1, DTPATHS1)
-
-                    # check whether the L2 paths are non-zero
-                    BDDPATHS2 = DDPATHS2 != 0
-                    BTTPATHS2 = TTPATHS2 != 0
-
-                    # compute elcl for all the L3 paths
-                    elcl_DT = (torch.sum(DTPATHS1, dim=1) - DDPATHS2) * BDDPATHS2
-                    elcl_TD = (torch.sum(TDPATHS1, dim=1) - TTPATHS2) * BTTPATHS2
-
-                    # if the elcl is zero, set it to 1
-                    elcl_DT[elcl_DT == 0] = 1
-                    elcl_TD[elcl_TD == 0] = 1
-
-                    # subtract 1 from the elcl since each CN connects to one of the seed nodes
-                    elcl_DT -= 1
-                    elcl_TD -= 1
-
-                    # compute the elcl for the valid L3 paths
-                    elcl_DT = 1 / (elcl_DT + 1) * DDPATHS2
-                    elcl_TD = 1 / (elcl_TD + 1) * TTPATHS2
-
-                    # compute the elcl for the L3 paths
-                    elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
-                    elcl_TD = torch.matmul(elcl_TD, TDPATHS1)
-
-                    score_matrix = elcl_DT + elcl_TD.T
-                    score_matrix = score_matrix * (mask1_total[l] == 0)
-                    thre = torch.sort(score_matrix.ravel())[0][-n_prune[l]]
-                    if thre == 0:
-                        print(n_prune[l])
-                        print(n_prune[l]/n_ones[l])
-                        print(torch.sum(torch.sort(score_matrix.ravel())[0][-n_prune[l]:]>0))
-                        print("Regrowing threshold is 0!!!")
-                        score_matrix = (score_matrix + 0.0001)*(mask1_total[l]==0)
-
-                    mask2 = torch.zeros_like(score_matrix.view(-1)).to(w.device)
-                    flat_matrix = score_matrix.flatten()
-                    probabilities = flat_matrix / flat_matrix.sum()
-
-                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
-                    mask2[sampled_flat_indices] = 1
-
-                elif self.args.regrow_method == "CH3_L3p_soft":
-                    # CH3_L3 path-based regrowth
-                    
-                    xb = np.array(mask1_total[l].cpu())
-                    x = transform_bi_to_mo(xb)
-                    
-                    A = csr_matrix(x)
-                    ir = A.indices
-                    jc = A.indptr
-                    scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, x.shape[0], [3], 1, 3, [1], 1))).to(w.device)
-                    scores = torch.reshape(scores_cell, x.shape)
-                    scores = scores[:xb.shape[0], xb.shape[0]:]
-                    
+                    scores = elcl_DT + elcl_TD.T
                     scores = scores * (mask1_total[l] == 0)
+                    thre = torch.sort(scores.ravel())[0][-n_prune[l]]
+                    if thre == 0:
+                        print("Regrowing threshold is 0!!!")
+                        scores = (scores + 0.00001)*(mask1_total[l]==0)
 
-                    mask2 = torch.zeros_like(scores.view(-1)).to(w.device)
-                    flat_matrix = scores.flatten()
-                    probabilities = flat_matrix / flat_matrix.sum()
 
-                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
-                    mask2[sampled_flat_indices] = 1
-                elif self.args.regrow_method == "CH3_L3p":
-                    # CH3_L3 path-based regrowth
-                    
+                elif "L3p" in self.args.regrow_method:
                     xb = np.array(mask1_total[l].cpu())
                     x = transform_bi_to_mo(xb)
                     
                     A = csr_matrix(x)
                     ir = A.indices
                     jc = A.indptr
-                    scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, x.shape[0], [3], 1, 3, [1], 1))).to(w.device)
+                    if CH_method == "CH2":
+                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [2], 1))).to(w.device)
+                    elif CH_method == "CH3":
+                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [3], 1))).to(w.device)
+                    elif CH_method == "CH3.1":
+                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [5], 1))).to(w.device)
+                    else:
+                        raise NotImplementedError
                     scores = torch.reshape(scores_cell, x.shape)
                     scores = scores[:xb.shape[0], xb.shape[0]:]
                     
                     scores = scores * (mask1_total[l] == 0)
 
                     thre = torch.sort(scores.ravel())[0][-n_prune[l]]
+                    if thre == 0:
+                        print("Regrowing threshold is 0!!!")
+                        print(f"# of scores: {torch.sum(scores > 0)}")
+                        scores = (scores + 0.00001)*(mask1_total[l]==0)
 
-                    mask2 = torch.zeros_like(scores).to(w.device)
-                    mask2[scores >= thre] = 1
+                elif self.args.regrow_method == "random":
+                    # random regrowth
+                    scores = torch.rand(w.shape).to(w.device) * (mask1_total[l] == 0)
+                    # flatten grow scores
+                    thre = torch.sort(scores.ravel())[0][-n_prune[l]]
+
+                elif self.args.regrow_method == "gradient":
+                    scores = torch.abs(self.backward_hook_objects[l].dense_grad) * (mask1_total[l] == 0)
+                    # flatten grow scores
+                    thre = torch.sort(scores.ravel())[0][-n_prune[l]]
                     
                 else:
                     raise NotImplementedError
 
+
+                if "soft" in self.args.regrow_method:
+                    mask2 = torch.zeros_like(scores.view(-1)).to(w.device)
+                    flat_matrix = scores.flatten()
+                    probabilities = flat_matrix / flat_matrix.sum()
+                    # print(probabilities.shape)
+                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
+                    mask2[sampled_flat_indices] = 1
+                else:
+                    mask2 = torch.zeros_like(scores).to(w.device)
+                    mask2[scores >= thre] = 1
                 
+
+                if self.args.tiedrank:
+                    pass
 
                 mask2_reshaped = torch.reshape(mask2, current_mask.shape)
                 
@@ -707,6 +685,41 @@ class DSTScheduler:
                                 torch.ones_like(sorted_indices),
                                 torch.zeros_like(sorted_indices))
                     mask1 = new_values.scatter(0, sorted_indices, new_values)
+
+                elif self.args.remove_method == "weight_magnitude_soft":
+                    score_drop = torch.abs(w)
+                    T = 1 + self.step * (2 / self.T_end)
+                    # print(f"Current Temperature: {T}")
+
+                    mask1 = torch.zeros_like(score_drop.view(-1)).to(w.device)
+                    flat_matrix = (score_drop.flatten())** T
+                    probabilities = flat_matrix / flat_matrix.sum()
+
+                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_keep[-1]), replacement=False)
+                    mask1[sampled_flat_indices] = 1
+                
+                elif self.args.remove_method == "ri":
+                    eplison = 0.00001
+                    score_drop = torch.abs(w)/torch.sum(torch.abs(w) + eplison, dim=0) + torch.abs(w)/torch.sum(torch.abs(w) + eplison, dim=1).reshape(-1, 1)
+                    _, sorted_indices = torch.topk(score_drop.view(-1), k=n_total)
+                    new_values = torch.where(
+                                torch.arange(n_total, device=w.device) < n_keep[-1],
+                                torch.ones_like(sorted_indices),
+                                torch.zeros_like(sorted_indices))
+                    mask1 = new_values.scatter(0, sorted_indices, new_values)
+
+                elif self.args.remove_method == "ri_soft":
+                    eplison = 0.00001
+                    score_drop = torch.abs(w)/torch.sum(torch.abs(w) + eplison, dim=0) + torch.abs(w)/torch.sum(torch.abs(w) + eplison, dim=1).reshape(-1, 1)
+                    T = 1 + self.step * (2 / self.T_end)
+                    # print(f"Current Temperature: {T}")
+
+                    mask1 = torch.zeros_like(score_drop.view(-1)).to(w.device)
+                    flat_matrix = (score_drop.flatten())** T
+                    probabilities = flat_matrix / flat_matrix.sum()
+
+                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_keep[-1]), replacement=False)
+                    mask1[sampled_flat_indices] = 1
                     
                 else:
                     raise NotImplementedError
@@ -823,3 +836,60 @@ def transform_bi_to_mo(xb):
     # Assign the transpose of xb to the bottom-left block of matrix x
     x[xb.shape[0]:, :xb.shape[0]] = xb.T
     return x
+
+
+def load_calib_dataset(args, data_dir='./data'):
+    if args.dataset == "MNIST":
+        dataloader = torch.utils.data.DataLoader(
+                        datasets.MNIST(data_dir, train=True, download=True,
+                                    transform=transforms.Compose([
+                                        transforms.ToTensor()
+                                    ])),
+                        batch_size=args.calib_samples, shuffle=True)
+        input_of_sparse_layer = np.zeros((784,60000))
+    elif args.dataset == "Fashion_MNIST":
+        dataloader= torch.utils.data.DataLoader(datasets.FashionMNIST(
+                    root=data_dir,
+                    train=True,
+                    transform=transforms.Compose([
+                        transforms.ToTensor()
+                        # transforms.Normalize((0.1307,), (0.3081,))
+                    ]),
+                    download=True),
+                    batch_size=args.batch_size,
+                    shuffle=True)
+        input_of_sparse_layer = np.zeros((784,60000))
+    elif args.dataset == "EMNIST":
+        dataloader = torch.utils.data.DataLoader(datasets.EMNIST(
+                    root=data_dir,
+                    train=True,
+                    transform=transforms.Compose([
+                        transforms.ToTensor()
+                    ]),
+                    download=True,
+                    split='balanced'),
+                    batch_size=args.batch_size,
+                    shuffle=True)
+        input_of_sparse_layer = np.zeros((784,112800))
+
+    elif args.dataset == "CIFAR10":
+        dataloader = torch.utils.data.DataLoader(
+            datasets.CIFAR10('./data', train=True, download=True,
+                            transform=transforms.Compose([
+                                transforms.ToTensor(),
+                                ])),
+            batch_size=args.batch_size, shuffle=True)
+        input_of_sparse_layer = np.zeros((3072,112800))
+        
+        
+    elif args.dataset == "CIFAR100":
+        dataloader = torch.utils.data.DataLoader(
+            datasets.CIFAR100('./data', train=True, download=True,
+                            transform=transforms.Compose([
+                                transforms.ToTensor()
+                                ])),
+            batch_size=args.batch_size, shuffle=True)
+        input_of_sparse_layer = np.zeros((3072,112800))
+
+    
+    return dataloader, input_of_sparse_layer

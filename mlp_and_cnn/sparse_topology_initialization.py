@@ -43,22 +43,17 @@ def load_calib_dataset(args, data_dir='./data'):
 def rewire_connections(layer):
     new_matrix = torch.zeros_like(layer.weight_mask).to(layer.device)
 
-    # 获取矩阵的列数和行数
     cols = new_matrix.shape[1]
     rows = new_matrix.shape[0]
 
-    # 对每一列进行处理
     for i in range(cols):
-        # 当前列
         column = layer.weight_mask[:, i]
-        
-        # 计算当前列中非零元素的数量
+
         num_connections = column.nonzero().numel()
         
-        # 生成新的随机位置
+
         new_positions = torch.randperm(rows)[:num_connections]
-        
-        # 在新的随机位置设置为1或原始非零值
+
         new_matrix[new_positions, i] = column[column != 0]
 
     layer.weight_mask = new_matrix
@@ -96,28 +91,6 @@ def create_sparse_topological_initialization(args, model, filename=None, eng=Non
         for layer in model.sparse_layers:
             create_ws_sparse(layer, args)
             
-    # elif args.load_existing_topology:
-    #     for i, layer in enumerate(model.sparse_layers):
-    #         adj = loadmat(f"{args.load_existing_topology}/{i}.mat")["adjacency_matrix"]
-    #         layer.weight_mask = torch.Tensor(adj).to(layer.device)
-            
-    
-    # if args.soft_resort or args.rigid_resort:
-    #     for i in range(len(model.sparse_layers)-1):
-    #         out_neuron_degree = torch.sum(model.sparse_layers[i].weight_mask, dim=0, dtype=torch.float32)
-    #         in_neuron_degree = torch.sum(model.sparse_layers[i+1].weight_mask, dim=1, dtype=torch.float32)
-            
-    #         if args.rigid_resort:
-    #             out_neuron_idx = torch.sort(out_neuron_degree)[1]
-    #             in_neuron_idx = torch.sort(in_neuron_degree)[1]
-    #             model.sparse_layers[i].weight_mask = model.sparse_layers[i].weight_mask[:, out_neuron_idx]
-    #             model.sparse_layers[i+1].weight_mask = model.sparse_layers[i+1].weight_mask[in_neuron_idx, :]
-                
-    #         elif args.soft_resort:
-    #             out_neuron_idx = torch.sort(out_neuron_degree)[1]
-    #             model.sparse_layers[i].weight_mask = model.sparse_layers[i].weight_mask[:, out_neuron_idx]
-    #             in_neuron_idx = soft_resort(in_neuron_degree)
-    #             model.sparse_layers[i+1].weight_mask = model.sparse_layers[i+1].weight_mask[in_neuron_idx, :]
                 
 def soft_resort(in_neuron_degree):
     sampled_indices = torch.multinomial(in_neuron_degree, num_samples=in_neuron_degree.shape[0], replacement=False)

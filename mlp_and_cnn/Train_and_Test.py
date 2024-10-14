@@ -62,15 +62,15 @@ def Test(model, device, val_loader):
     model.eval()
     criterion = nn.CrossEntropyLoss().to(device)
     end = time.time()
-    for l, m in model.named_modules():
-        if isinstance(m, nn.Linear):
-            print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
-            print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight, dim=1) != 0), torch.sum(torch.sum(m.weight, dim=0) != 0)))
-        elif isinstance(m, sparse_layer):
-            # print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
-            # print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight, dim=1) != 0), torch.sum(torch.sum(m.weight, dim=0) != 0)))
-            print("density is: ", torch.sum(m.weight_mask!=0)/m.weight.data.numel())
-            print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight_mask, dim=1) != 0).item(), torch.sum(torch.sum(m.weight_mask, dim=0) != 0).item()))
+    # for l, m in model.named_modules():
+    #     if isinstance(m, nn.Linear):
+    #         print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
+    #         print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight, dim=1) != 0), torch.sum(torch.sum(m.weight, dim=0) != 0)))
+    #     elif isinstance(m, sparse_layer):
+    #         # print("density is: ", torch.sum(m.weight.data!=0)/m.weight.data.numel())
+    #         # print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight, dim=1) != 0), torch.sum(torch.sum(m.weight, dim=0) != 0)))
+    #         print("density is: ", torch.sum(m.weight_mask!=0)/m.weight.data.numel())
+    #         print("anp is: ({}, {})".format(torch.sum(torch.sum(m.weight_mask, dim=1) != 0).item(), torch.sum(torch.sum(m.weight_mask, dim=0) != 0).item()))
     for i, (input, target) in enumerate(val_loader):
         target = target.to(device)
         input = input.to(device)

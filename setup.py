@@ -17,8 +17,8 @@ elif sys.platform == "linux" or sys.platform == "linux2":  # Linux
 
 ext_modules = [
     Extension(
-        "compute_scores",
-        ["compute_scores.cpp", "bindings.cpp"],
+        "CH_scores",
+        ["bindings.cpp", "CH_scores_new_v2.cpp"],
         include_dirs=[pybind11.get_include()],
         language="c++",
         extra_compile_args=extra_compile_args,
@@ -27,7 +27,7 @@ ext_modules = [
 ]
 
 setup(
-    name="compute_scores",
+    name="CH_scores",
     ext_modules=ext_modules,
     zip_safe=False,
 )

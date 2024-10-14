@@ -3,6 +3,8 @@ import torch
 import numpy as np
 import random
 from model import sparse_mlp, dense_mlp, Sparse_GoogleNet, Dense_GoogleNet, Dense_ResNet152, Sparse_ResNet152
+import sys
+sys.path.append("../")
 import os 
 from load_data import load_data_mlp, load_data_cnn
 import torch.optim as optim
@@ -113,6 +115,7 @@ def args():
     parser.add_argument("--method", type=str, default="", help="the method name of the experiment")
     parser.add_argument("--old_version", action="store_true")
     parser.add_argument("--history_weights", action="store_true")
+    parser.add_argument("--tiedrank", action="store_true")
     
     return parser.parse_args()
 
@@ -163,6 +166,7 @@ def train_model(seed, device, args):
             save_path_parts.append(f"ws_beta_{args.ws_beta}_")
         if args.EM_S:
             save_path_parts.append("EM_S_")
+        save_path_parts.append(f"d_{args.dim}_")
         save_path = "/".join(save_path_parts) +  f"/{args.method}_{args.regrow_method}_{args.remove_method}/"
 
     print("Save path is:", save_path)
@@ -225,6 +229,12 @@ def train_model(seed, device, args):
         Train(args, model, device, train_loader, optimizer, epoch, warmup_scheduler, pruner)
         top1, top5, test_loss= Test(model, device, test_loader)
         m.update(test_loss, top1, top5)
+
+        if top1 > best_acc:
+            # Only save the best results after sparsity reached the preset value
+            if not args.EM_S or epoch > args.epochs * 0.75:
+                best_acc = top1
+                torch.save(model.state_dict(), save_path + 'best_model.pth')
         
         
 
@@ -261,8 +271,6 @@ def train_model(seed, device, args):
         wandb.log({"test_accuracy": top1, "test_loss": test_loss, "itop_rate": itop_rate, "anp_rate": anp_rate})
     # save model
     savemat(save_path + "res.mat", {'top1':m.top1, 'top5':m.top5, 'loss':m.loss, "itop_rate": itop_rates, "anp_rate": anp_rates})
-    torch.save(model.state_dict(), save_path + 'tmp_model.pth')
-
 
 
 if __name__ == '__main__':
