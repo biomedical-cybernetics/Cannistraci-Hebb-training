@@ -223,6 +223,7 @@ def train_model(seed, device, args):
   
     itop_rates = []
     anp_rates = []
+    best_acc = 0.0
     for epoch in range(args.epochs):
         anp_rate = 1.0
         itop_rate = 0.0
