@@ -1,7 +1,6 @@
 from torchvision import datasets, transforms
 import torch
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
