@@ -2,7 +2,6 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import time
-from sparse import sparse_layer
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
