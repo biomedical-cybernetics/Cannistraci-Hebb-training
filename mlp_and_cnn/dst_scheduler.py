@@ -544,8 +544,8 @@ class DSTScheduler:
                         elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
                         elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
                     elif CH_method == "CH3.1":
-                        elcl_DT = 1 / ((elcl_DT + 1) ** (1 + (elcl_DT/ (1+elcl_DT)))) * (DDPATHS2 + BDDPATHS2)
-                        elcl_TD = 1 / ((elcl_TD + 1) ** (1 + (elcl_TD/ (1+elcl_TD)))) * (TTPATHS2 + BTTPATHS2)
+                        #TODO: CH3.1
+                        pass
                     
 
                     elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
