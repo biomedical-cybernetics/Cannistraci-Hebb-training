@@ -6,7 +6,7 @@ from scipy.io import savemat
 import os
 import sys
 sys.path.append("../")
-import compute_scores
+import CH_scores
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
 from scipy.stats import spearmanr
@@ -284,7 +284,7 @@ class sparse_layer(nn.Module):
             A = csr_matrix(x)
             ir = A.indices
             jc = A.indptr
-            scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
+            scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
             scores = scores_cell.reshape(self.N, self.N)
             scores = scores[:self.indim, self.indim:]
             
@@ -309,7 +309,7 @@ class sparse_layer(nn.Module):
             A = csr_matrix(x)
             ir = A.indices
             jc = A.indptr
-            scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
+            scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, self.N, self.lengths, self.L, self.length_max, self.models, len(self.models)))).to(self.device)
             scores = scores_cell.reshape(self.N, self.N)
             scores = scores[:self.indim, self.indim:]
             

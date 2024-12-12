@@ -2,9 +2,8 @@ import argparse
 import torch
 import numpy as np
 import random
-from model import sparse_mlp, dense_mlp, Sparse_GoogleNet, Dense_GoogleNet, Dense_ResNet152, Sparse_ResNet152
+from model import dense_mlp
 import sys
-sys.path.append("../")
 import os 
 from load_data import load_data_mlp, load_data_cnn
 import torch.optim as optim
@@ -187,7 +186,6 @@ def train_model(seed, device, args):
         config=vars(args),
         mode="disabled" if args.no_log else "online",
     )
-
 
     if args.network_structure == "mlp":
         train_loader, test_loader, indim, outdim, hiddim = load_data_mlp(args)

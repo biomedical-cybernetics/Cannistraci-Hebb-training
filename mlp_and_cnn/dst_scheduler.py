@@ -538,14 +538,14 @@ class DSTScheduler:
                     elcl_DT -= 1
                     elcl_TD -= 1
                     if CH_method == "CH2":
-                        elcl_DT = 1 / (elcl_DT + 1) * DDPATHS2
-                        elcl_TD = 1 / (elcl_TD + 1) * TTPATHS2
+                        elcl_DT = 1 / (elcl_DT + 1) * (DDPATHS2 + BDDPATHS2)
+                        elcl_TD = 1 / (elcl_TD + 1) * (TTPATHS2 + BTTPATHS2)
                     elif CH_method == "CH3":
                         elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
                         elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
                     elif CH_method == "CH3.1":
-                        elcl_DT = 1 / (elcl_DT + 1/(DDPATHS2 + 1)) * BDDPATHS2
-                        elcl_TD = 1 / (elcl_TD + 1/(TTPATHS2 + 1)) * BTTPATHS2
+                        elcl_DT = 1 / ((elcl_DT + 1) ** (1 + (elcl_DT/ (1+elcl_DT)))) * (DDPATHS2 + BDDPATHS2)
+                        elcl_TD = 1 / ((elcl_TD + 1) ** (1 + (elcl_TD/ (1+elcl_TD)))) * (TTPATHS2 + BTTPATHS2)
                     
 
                     elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
@@ -685,7 +685,6 @@ class DSTScheduler:
                                 torch.ones_like(sorted_indices),
                                 torch.zeros_like(sorted_indices))
                     mask1 = new_values.scatter(0, sorted_indices, new_values)
-
                 elif self.args.remove_method == "weight_magnitude_soft":
                     score_drop = torch.abs(w)
                     T = 1 + self.step * (2 / self.T_end)
@@ -845,7 +844,7 @@ def load_calib_dataset(args, data_dir='./data'):
                                     transform=transforms.Compose([
                                         transforms.ToTensor()
                                     ])),
-                        batch_size=args.calib_samples, shuffle=True)
+                        batch_size=args.batch_size, shuffle=True)
         input_of_sparse_layer = np.zeros((784,60000))
     elif args.dataset == "Fashion_MNIST":
         dataloader= torch.utils.data.DataLoader(datasets.FashionMNIST(
