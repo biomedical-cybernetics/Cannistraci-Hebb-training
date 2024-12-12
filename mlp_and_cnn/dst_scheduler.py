@@ -571,7 +571,8 @@ class DSTScheduler:
                     elif CH_method == "CH3":
                         scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [3], 1))).to(w.device)
                     elif CH_method == "CH3.1":
-                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [5], 1))).to(w.device)
+                        #TODO: CH3.1
+                        pass
                     else:
                         raise NotImplementedError
                     scores = torch.reshape(scores_cell, x.shape)
