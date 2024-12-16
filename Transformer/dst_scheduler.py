@@ -5,7 +5,10 @@ import torch.distributed as dist
 from dst_util import get_W
 from sparse_topology_initialization import create_ws_sparse_scheduler
 import math
-
+from scipy.sparse import csr_matrix
+import sys
+sys.path.append("../")
+import CH_scores
 
 def chain_removal(layer1, layer2):
     layer1 = remove_unactive_links_backward(layer1, layer2)
@@ -25,10 +28,7 @@ def remove_unactive_links_backward(current_adj, after_adj):
     outdegree[outdegree>0] = 1
     current_num = torch.sum(current_adj)
     current_adj = current_adj * outdegree.reshape(-1, 1)
-
-    if int(current_num - torch.sum(current_adj)) > 0:
-        print("Number of removed unactive links backwards: ", int(current_num - torch.sum(current_adj)))
-        print(torch.sum(outdegree), outdegree.shape[0])
+    print("Number of removed unactive links backwards: ", int(current_num - torch.sum(current_adj)))
 
     return current_adj
 
@@ -37,9 +37,7 @@ def remove_unactive_links_forward(current_adj, before_adj):
     indegree[indegree>0] = 1
     current_num = torch.sum(current_adj)
     current_adj = current_adj * indegree.reshape(1, -1)
-    if int(current_num - torch.sum(current_adj)) > 0:
-        print("Number of removed unactive links forwards: ", int(current_num - torch.sum(current_adj)))
-        print(torch.sum(indegree), indegree.shape[0])
+    print("Number of removed unactive links forwards: ", int(current_num - torch.sum(current_adj)))
     return current_adj
 
 
@@ -116,9 +114,10 @@ class DSTScheduler:
                     self.S.append((1 - dense_allocation - 0.05))
                 else:
                     self.S.append(1 - dense_allocation)
-
-                # else:
-                self.S.append(1-dense_allocation)
+            
+            if args.init_mode == "swi" or args.init_mode == "kaiming":
+                # reset the parameters with swi
+                self.reset_parameters()
 
             # randomly sparsify model according to S
             self.random_sparsify()
@@ -466,12 +465,13 @@ class DSTScheduler:
                 
 
                 # Link regrowth
-                if self.args.regrow_method == "CH3_L3n_soft":
-                    # CH3-L3 node-based regrowth soft-rule
+                CH_method = self.args.regrow_method.split("_")[0]
 
+                if "L3n" in self.args.regrow_method:
+                    
                     DTPATHS1 = mask1_total[l].clone().float()
+                    
                     TDPATHS1 = DTPATHS1.transpose(1, 0)
-
                     DDPATHS2 = torch.matmul(DTPATHS1, TDPATHS1)
                     TTPATHS2 = torch.matmul(TDPATHS1, DTPATHS1)
 
@@ -486,124 +486,79 @@ class DSTScheduler:
 
                     elcl_DT -= 1
                     elcl_TD -= 1
-
-                    elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
-                    elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
+                    if CH_method == "CH2":
+                        elcl_DT = 1 / (elcl_DT + 1) * (DDPATHS2 + BDDPATHS2)
+                        elcl_TD = 1 / (elcl_TD + 1) * (TTPATHS2 + BTTPATHS2)
+                    elif CH_method == "CH3":
+                        elcl_DT = 1 / (elcl_DT + 1) * BDDPATHS2
+                        elcl_TD = 1 / (elcl_TD + 1) * BTTPATHS2
+                    elif CH_method == "CH3.1":
+                        pass
+                    
 
                     elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
                     elcl_TD = torch.matmul(elcl_TD, TDPATHS1)
 
-                    score_matrix = elcl_DT + elcl_TD.T
-                    score_matrix = score_matrix * (mask1_total[l] == 0)
-                    thre = torch.sort(score_matrix.ravel())[0][-n_prune[l]]
-                    if thre == 0:
-                        print("Regrowing threshold is 0!!!")
-                        score_matrix = (score_matrix + 0.00001)*(mask1_total[l]==0)
-
-                    mask2 = torch.zeros_like(score_matrix.view(-1)).to(w.device)
-                    flat_matrix = score_matrix.flatten()
-                    probabilities = flat_matrix / flat_matrix.sum()
-
-                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
-                    mask2[sampled_flat_indices] = 1
-
-                elif self.args.regrow_method == "CH2_L3n_soft":
-                    # CH2-L3 node-based soft-rule
-                    DTPATHS1 = mask1_total[l].clone().float()
-                    TDPATHS1 = DTPATHS1.transpose(1, 0)
-
-                    # get number of L2 paths
-                    DDPATHS2 = torch.matmul(DTPATHS1, TDPATHS1)
-                    TTPATHS2 = torch.matmul(TDPATHS1, DTPATHS1)
-
-                    # check whether the L2 paths are non-zero
-                    BDDPATHS2 = DDPATHS2 != 0
-                    BTTPATHS2 = TTPATHS2 != 0
-
-                    # compute elcl for all the L3 paths
-                    elcl_DT = (torch.sum(DTPATHS1, dim=1) - DDPATHS2) * BDDPATHS2
-                    elcl_TD = (torch.sum(TDPATHS1, dim=1) - TTPATHS2) * BTTPATHS2
-
-                    # if the elcl is zero, set it to 1
-                    elcl_DT[elcl_DT == 0] = 1
-                    elcl_TD[elcl_TD == 0] = 1
-
-                    # subtract 1 from the elcl since each CN connects to one of the seed nodes
-                    elcl_DT -= 1
-                    elcl_TD -= 1
-
-                    # compute the elcl for the valid L3 paths
-                    elcl_DT = 1 / (elcl_DT + 1) * DDPATHS2
-                    elcl_TD = 1 / (elcl_TD + 1) * TTPATHS2
-
-                    # compute the elcl for the L3 paths
-                    elcl_DT = torch.matmul(elcl_DT, DTPATHS1)
-                    elcl_TD = torch.matmul(elcl_TD, TDPATHS1)
-
-                    score_matrix = elcl_DT + elcl_TD.T
-                    score_matrix = score_matrix * (mask1_total[l] == 0)
-                    thre = torch.sort(score_matrix.ravel())[0][-n_prune[l]]
-                    # print("removal_and_regrowth_rate: ", n_prune[l]/n_ones[l])
-                    # print("Non-zero scores rate are: ", torch.sum(score_matrix!=0)/torch.sum((mask1_total[l] == 0)))
-                    if thre == 0:
-                        
-                        print(n_prune[l])
-                        print(n_prune[l]/n_ones[l])
-                        print(torch.sort(score_matrix.ravel())[0][-n_prune[l]:])
-                        print("Regrowing threshold is 0!!!")
-                        score_matrix = (score_matrix + 0.00001)*(mask1_total[l]==0)
-
-                    mask2 = torch.zeros_like(score_matrix.view(-1)).to(w.device)
-                    flat_matrix = score_matrix.flatten()
-                    probabilities = flat_matrix / flat_matrix.sum()
-
-                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
-                    mask2[sampled_flat_indices] = 1
-                elif self.args.regrow_method == "CH3_L3p_soft":
-                    # CH3_L3 path-based regrowth
-                    
-                    xb = np.array(mask1_total[l].cpu())
-                    x = transform_bi_to_mo(xb)
-                    
-                    A = csr_matrix(x)
-                    ir = A.indices
-                    jc = A.indptr
-                    scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, x.shape[0], [3], 1, 3, [1], 1))).to(w.device)
-                    scores = torch.reshape(scores_cell, x.shape)
-                    scores = scores[:xb.shape[0], xb.shape[0]:]
-                    
+                    scores = elcl_DT + elcl_TD.T
                     scores = scores * (mask1_total[l] == 0)
-
-                    mask2 = torch.zeros_like(scores.view(-1)).to(w.device)
-                    flat_matrix = scores.flatten()
-                    probabilities = flat_matrix / flat_matrix.sum()
-
-                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
-                    mask2[sampled_flat_indices] = 1
-                elif self.args.regrow_method == "CH3_L3p":
+                    thre = torch.sort(scores.ravel())[0][-n_prune[l]]
+                    if thre == 0:
+                        print("Regrowing threshold is 0!!!")
+                        scores = (scores + 0.00001)*(mask1_total[l]==0)
+                
+                elif "L3p" in self.args.regrow_method:
                     # CH3_L3 path-based regrowth
-                    
                     xb = np.array(mask1_total[l].cpu())
                     x = transform_bi_to_mo(xb)
                     
                     A = csr_matrix(x)
                     ir = A.indices
                     jc = A.indptr
-                    scores_cell = torch.tensor(np.array(compute_scores.compute_scores(ir, jc, x.shape[0], [3], 1, 3, [1], 1))).to(w.device)
+                    if CH_method == "CH2":
+                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [2], 1))).to(w.device)
+                    elif CH_method == "CH3":
+                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [3], 1))).to(w.device)
+                    elif CH_method == "CH3.1":
+                        scores_cell = torch.tensor(np.array(CH_scores.CH_scores_new_v2(ir, jc, x.shape[0], [3], 1, 3, [5], 1))).to(w.device)
+                    else:
+                        raise NotImplementedError
                     scores = torch.reshape(scores_cell, x.shape)
                     scores = scores[:xb.shape[0], xb.shape[0]:]
                     
                     scores = scores * (mask1_total[l] == 0)
 
                     thre = torch.sort(scores.ravel())[0][-n_prune[l]]
+                    if thre == 0:
+                        print("Regrowing threshold is 0!!!")
+                        print(f"# of scores: {torch.sum(scores > 0)}")
+                        scores = (scores + 0.00001)*(mask1_total[l]==0)
+                elif self.args.regrow_method == "random":
+                    # random regrowth
+                    scores = torch.rand(w.shape).to(w.device) * (mask1_total[l] == 0)
+                    # flatten grow scores
+                    thre = torch.sort(scores.ravel())[0][-n_prune[l]]
 
-                    mask2 = torch.zeros_like(scores).to(w.device)
-                    mask2[scores >= thre] = 1
+                elif self.args.regrow_method == "gradient":
+                    scores = torch.abs(self.backward_hook_objects[l].dense_grad) * (mask1_total[l] == 0)
+                    # flatten grow scores
+                    thre = torch.sort(scores.ravel())[0][-n_prune[l]]
                     
                 else:
                     raise NotImplementedError
 
-                
+
+                if "soft" in self.args.regrow_method:
+                    mask2 = torch.zeros_like(scores.view(-1)).to(w.device)
+                    flat_matrix = scores.flatten()
+                    probabilities = flat_matrix / flat_matrix.sum()
+                    # print(probabilities.shape)
+                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_prune[l]), replacement=False)
+                    mask2[sampled_flat_indices] = 1
+                else:
+                    mask2 = torch.zeros_like(scores).to(w.device)
+                    mask2[scores >= thre] = 1
+                if self.args.tiedrank:
+                    pass
 
                 mask2_reshaped = torch.reshape(mask2, current_mask.shape)
                 grow_tensor = torch.zeros_like(w)
@@ -623,7 +578,7 @@ class DSTScheduler:
                 mask_combined = (mask1_total[l] + mask2_reshaped).bool()
                 if self.args.itop:
                     self.record_mask[l] = ((self.record_mask[l] == 1) | (mask_combined == 1))
-                    # print("ITOP rate is : ", (torch.sum(self.record_mask[l]) / mask_combined.numel()).item())
+                    print("ITOP rate is : ", (torch.sum(self.record_mask[l]) / mask_combined.numel()).item())
 
                 # update the mask
                 current_mask.data = mask_combined
@@ -685,10 +640,57 @@ class DSTScheduler:
                                 torch.ones_like(sorted_indices),
                                 torch.zeros_like(sorted_indices))
                     mask1 = new_values.scatter(0, sorted_indices, new_values)
-                    
+                elif self.args.remove_method == "weight_magnitude_soft":
+                    score_drop = torch.abs(w)
+                    # if is distributed, synchronize scores
+                    if is_dist:
+                        dist.all_reduce(score_drop)  # get the sum of all drop scores
+                        score_drop /= world_size     # divide by world size (average the drop scores)
+                    T = 1 + self.step * (2 / self.T_end)
+                    # print(f"Current Temperature: {T}")
+
+                    mask1 = torch.zeros_like(score_drop.view(-1)).to(w.device)
+                    flat_matrix = (score_drop.flatten())** T
+                    probabilities = flat_matrix / flat_matrix.sum()
+
+                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_keep[-1]), replacement=False)
+                    mask1[sampled_flat_indices] = 1
+                
+                elif self.args.remove_method == "ri":
+                    score_drop = torch.abs(w)
+                    # if is distributed, synchronize scores
+                    if is_dist:
+                        dist.all_reduce(score_drop)  # get the sum of all drop scores
+                        score_drop /= world_size     # divide by world size (average the drop scores)
+                    eplison = 0.00001
+                    score_drop = torch.abs(score_drop)/torch.sum(torch.abs(score_drop)+ eplison, dim=0) + torch.abs(score_drop)/torch.sum(torch.abs(score_drop)+ eplison, dim=1).reshape(-1, 1)
+                    _, sorted_indices = torch.topk(score_drop.view(-1), k=n_total)
+                    new_values = torch.where(
+                                torch.arange(n_total, device=w.device) < n_keep[-1],
+                                torch.ones_like(sorted_indices),
+                                torch.zeros_like(sorted_indices))
+                    mask1 = new_values.scatter(0, sorted_indices, new_values)
+
+                elif self.args.remove_method == "ri_soft":
+                    eplison = 0.00001
+                    score_drop = torch.abs(w)
+                    # if is distributed, synchronize scores
+                    if is_dist:
+                        dist.all_reduce(score_drop)  # get the sum of all drop scores
+                        score_drop /= world_size     # divide by world size (average the drop scores)
+                    score_drop = torch.abs(score_drop)/torch.sum(torch.abs(score_drop)+ eplison, dim=0) + torch.abs(score_drop)/torch.sum(torch.abs(score_drop)+ eplison, dim=1).reshape(-1, 1)
+                    T = 1 + self.step * (2 / self.T_end)
+                    # print(f"Current Temperature: {T}")
+
+                    mask1 = torch.zeros_like(score_drop.view(-1)).to(w.device)
+                    flat_matrix = (score_drop.flatten())** T
+                    probabilities = flat_matrix / flat_matrix.sum()
+
+                    sampled_flat_indices = torch.multinomial(probabilities, max(1, n_keep[-1]), replacement=False)
+                    mask1[sampled_flat_indices] = 1
                 else:
                     raise NotImplementedError
-                
+
 
                 if self.args.EM_S:
                     if self.step <= self.T_end * 0.6:
@@ -771,7 +773,7 @@ class DSTScheduler:
 
                 if self.args.itop:
                     self.record_mask[l] = ((self.record_mask[l] == 1) | (mask_combined == 1))
-                    # print("ITOP rate is : ", (torch.sum(self.record_mask[l]) / mask_combined.numel()).item())
+                    print("ITOP rate is : ", (torch.sum(self.record_mask[l]) / mask_combined.numel()).item())
 
                 # update the mask
                 current_mask.data = mask_combined
@@ -782,8 +784,12 @@ class DSTScheduler:
     @torch.no_grad()
     def reset_parameters(self):
         for l, w in enumerate(self.W):
-            stdv = math.sqrt(2. / (((1-self.S[l]) * self.N[l]) / w.shape[0]))
-            
+            if self.args.init_mode == "swi":
+                stdv = math.sqrt(2. / (((1-self.S[l]) * self.N[l]) / w.shape[1]))
+            elif self.args.init_mode == "kaiming":
+                stdv = math.sqrt(2 / w.shape[1])
+            else:
+                raise NotImplementedError
             w.data = (torch.randn(w.shape[0], w.shape[1]) * stdv).to(w.device)
 
 def transform_bi_to_mo(xb):
