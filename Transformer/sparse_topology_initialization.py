@@ -159,24 +159,20 @@ def soft_resort(in_neuron_degree):
 def create_ws_sparse_scheduler(sparsity, w, args):
     indim = min(w.shape[0], w.shape[1])
     outdim = max(w.shape[0], w.shape[1])
-    K = (1- sparsity) * indim * outdim / (indim + outdim)
+
+    K = (1- sparsity) * indim
     
     K1 = int(K)
     K2 = int(K) + 1
-    dim = max(outdim, indim)
-    my_list = [K1] * int(dim * (K2 - K)) + [K2] * int(dim * (K-K1) + 1)
+    my_list = [K1] * int(outdim * (K2 - K)) + [K2] * int(outdim * (K-K1) + 1)
     random.shuffle(my_list)
     
     adj = np.zeros((indim, outdim))
 
-    rate = outdim/indim
-    for i in range(indim):
-        idx = [(int(i*rate) + j) % outdim for j in range(my_list[i])]
-        adj[i, idx] = 1 
     rate = indim/outdim
     random.shuffle(my_list)
     for i in range(outdim):
-        idx = [(int(i*rate) + j + 1) % indim for j in range(my_list[i])]
+        idx = [(int(i*rate-my_list[i]/2) + j) % indim for j in range(my_list[i])]
         adj[idx, i] = 1 
         
     # rewiring
