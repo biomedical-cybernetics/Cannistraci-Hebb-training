@@ -513,7 +513,10 @@ class DSTScheduler:
                 else:
                     n_prune[l] = int(n_ones[l] - torch.sum(mask1_total[l]))
                     print(f"Sparse layer {l}, number of regrowth links: {n_prune[l]}")
-                
+
+                if n_prune[l] == 0:
+                    print(f"Layer {l} has no regrowth links, skipping...")
+                    continue
 
                 # Link regrowth
                 CH_method = self.args.regrow_method.split("_")[0]
