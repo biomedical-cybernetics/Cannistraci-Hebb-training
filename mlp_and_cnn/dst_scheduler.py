@@ -882,7 +882,7 @@ def load_calib_dataset(args, data_dir='./data'):
                                 transforms.ToTensor(),
                                 ])),
             batch_size=args.batch_size, shuffle=True)
-        input_of_sparse_layer = np.zeros((3072,112800))
+        input_of_sparse_layer = np.zeros((3072,50000))
         
         
     elif args.dataset == "CIFAR100":
@@ -892,7 +892,7 @@ def load_calib_dataset(args, data_dir='./data'):
                                 transforms.ToTensor()
                                 ])),
             batch_size=args.batch_size, shuffle=True)
-        input_of_sparse_layer = np.zeros((3072,112800))
+        input_of_sparse_layer = np.zeros((3072,50000))
 
     
     return dataloader, input_of_sparse_layer
