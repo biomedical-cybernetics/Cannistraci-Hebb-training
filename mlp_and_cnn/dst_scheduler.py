@@ -486,7 +486,7 @@ class DSTScheduler:
 
 
             
-            if self.args.regrow_method not in ["random", "gradient", "CH3_L3n_soft", "CH3_L3p_soft", "CH2_L3n_soft", "CH2_L3p_soft", "CH3.1_L3n_soft", "CH3.1_L3p_soft"]:
+            if self.args.regrow_method not in ["random", "gradient", "CH3_L3p", "CH3_L3n_soft", "CH3_L3p_soft", "CH2_L3n_soft", "CH2_L3p_soft", "CH3.1_L3n_soft", "CH3.1_L3p_soft"]:
                 raise NotImplementedError
 
             for l, w in enumerate(self.W):
